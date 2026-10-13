@@ -1,0 +1,35 @@
+# Object files and build artifacts
+*.o
+*.obj
+*.d
+*.a
+*.out
+
+# Executables (anchored so the folders themselves are not ignored)
+/compiler/compiler
+/pal/pal
+
+# Compiled sample/test binaries in the compiler folder.
+# Run `file program1 program1_test` first. If they are binaries, uncomment:
+# /compiler/program[0-9]
+# /compiler/program1_test
+
+# Generated PAL output from running the compiler
+# *.pal.out
+
+# Debug symbols and profiling
+*.dSYM/
+*.gcda
+*.gcno
+core
+core.*
+
+# Editors and IDEs
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
