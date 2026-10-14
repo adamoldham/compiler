@@ -518,6 +518,28 @@ void scanner::scan_digit()
 		get_char();
 	}
 	current_symbol = new symbol(symbol::integer);
+
+	// A '.' followed by another '.' is the range symbol (1..10), so the number ends here as an integer.
+	if ((next_char == '.') and (following_char() == '.'))
+		return;
+
+	// A single '.' makes this a real number. The digits before it are already in current_integer_value.
+	if (next_char == '.')
+	{
+		current_real_value = current_integer_value;
+		get_char();		// consume the '.'
+		if (!isdigit(next_char))
+			error->flag(current_line_number, current_pos_on_line, 63);	// Real number must have digits after the dot.
+
+		float scale = 0.1f;		// place value of the next fraction digit
+		while (isdigit(next_char))
+		{
+			current_real_value += (next_char - '0') * scale;
+			scale /= 10;
+			get_char();
+		}
+		current_symbol = new symbol(symbol::real_num);
+	}
 }
 
 
