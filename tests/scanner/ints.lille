@@ -1,0 +1,3 @@
+-- ints: expect Integer tokens with values 0, 7, 42, 12345
+0 7 42 12345
+x := 42;

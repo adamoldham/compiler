@@ -1,0 +1,4 @@
+-- first line has no closing quote: expect an error
+"abc
+x := 1;
+-- the line above should still scan normally after the error

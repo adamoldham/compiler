@@ -1,0 +1,6 @@
+-- each line below should produce a lexical error
+3.
+3.x
+7E-2
+5E
+5E+

@@ -1,0 +1,5 @@
+-- expect String tokens: hello / a b  c / I said "Help" / one double quote
+"hello"
+"a b  c"
+"I said ""Help"""
+""""
