@@ -509,7 +509,7 @@ void scanner::scan_alpha()
 void scanner::scan_digit()
 {
 	// scan in a token beginning with a digit
-	// Note that a unary operator such as -1 would be detected as a minus sign followed by a digit.
+	// a unary operator such as -1 would be detected as a minus sign followed by a digit.
 
 	current_integer_value = 0;
 	while (isdigit(next_char))
@@ -519,11 +519,11 @@ void scanner::scan_digit()
 	}
 	current_symbol = new symbol(symbol::integer);
 
-	// A '.' followed by another '.' is the range symbol (1..10), so the number ends here as an integer.
+	// a '.' followed by another '.' is the range symbol (1..10), so the number ends here as an integer.
 	if ((next_char == '.') and (following_char() == '.'))
 		return;
 
-	// A single '.' makes this a real number. The digits before it are already in current_integer_value.
+	// a single '.' makes this a real number. The digits before it are already in current_integer_value.
 	if (next_char == '.')
 	{
 		current_real_value = current_integer_value;
@@ -539,6 +539,37 @@ void scanner::scan_digit()
 			get_char();
 		}
 		current_symbol = new symbol(symbol::real_num);
+	}
+
+	// exponents: E or e, then a sign, then digits. Applies to both integers and reals.
+	if ((next_char == 'E') or (next_char == 'e'))
+	{
+		bool is_real = (current_symbol->get_sym() == symbol::real_num);
+		bool negative = false;
+		int exponent = 0;
+
+		get_char();		// consume the E
+		if ((next_char == '+') or (next_char == '-'))
+		{
+			negative = (next_char == '-');
+			get_char();		// consume the sign
+		}
+		if (!isdigit(next_char))
+			error->flag(current_line_number, current_pos_on_line, 64);	// Must have digits after exponent symbol.
+
+		while (isdigit(next_char))
+		{
+			exponent = exponent * 10 + (next_char - '0');
+			get_char();
+		}
+
+		if (is_real)
+			current_real_value *= pow(10.0, negative ? -exponent : exponent);
+		else if (negative)
+			error->flag(current_line_number, current_pos_on_line, 67);	// An integer can only have a positive exponent.
+		else
+			for (int i = 0; i < exponent; i++)
+				current_integer_value *= 10;
 	}
 }
 
