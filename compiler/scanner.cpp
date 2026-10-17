@@ -399,10 +399,32 @@ void scanner::scan_string()
     	// the source file. 2 adjacent double quote marks are interpreted as a single
     	// double quote character within the string.
     
-    	// TO BE COMPLETED BEFORE THE SCANNER FUNCTIONS PROPERLY AND THE
-    	// PARSER CAN BE STARTED.
+	bool terminated {false};
 
-	// INSERT CODE HERE.
+	current_string_value = "";
+	get_char(); // consume the opening quote
+	while (!terminated and (next_char != end_marker))
+	{
+		if (next_char == '"')
+		{
+			if (following_char() == '"')
+			{
+				current_string_value += '"'; // two quotes in a row are one quote inside the string
+				get_char(); // move onto the second quote
+				get_char(); // move past it
+			}
+			else
+				terminated = true; // closing quote, next_char stays on it
+		}
+		else
+		{
+			current_string_value += next_char;
+			get_char();
+		}
+	}
+	if (!terminated)
+		error->flag(current_line_number, current_pos_on_line, 60); // string must end before the end of the line
+	current_symbol = new symbol(symbol::strng);
 }
 
 

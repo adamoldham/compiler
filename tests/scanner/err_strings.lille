@@ -1,4 +1,10 @@
--- first line has no closing quote: expect an error
+-- ERROR 1 (line 2): no closing quote
 "abc
 x := 1;
--- the line above should still scan normally after the error
+-- ERROR 2 (line 5): the doubled quotes at the end are a literal quote, so the string never closes
+"I said ""Help""
+x := 1;
+-- ERROR 3 (line 8) and ERROR 4 (line 9): a string cannot span lines
+"first half of a string
+second half"
+y := 2;
