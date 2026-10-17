@@ -614,6 +614,8 @@ void scanner::scan_digit()
 	// flag is used to increment error_num and inserts into linked list
 	// returns nothing, doesn't stop scan
 	// error_handler.cpp lines 149-155 have error codes
+	// should be error nums 62-68
+	// 62 isnt used because 68 already covers that
 }
 
 
