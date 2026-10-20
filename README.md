@@ -33,10 +33,16 @@ make
 
 ```
 cd compiler
-./compiler <source-file>.lille
+./compiler [flags] <source-file>
 ```
 
-At this stage the driver requests tokens from the scanner and prints them. Confirm the exact command-line usage against `compiler.cpp` and update this section if it differs.
+Flags:
+
+- `-h`: print a help message.
+- `-l`: create a listing file showing the source and any errors (not implemented yet).
+- `-o filename`: name of the generated PAL code file.
+
+At this stage the driver requests tokens from the scanner until the end of the program. Set `debugging` to `true` in `scanner.h` and rebuild to print each line read and each token returned.
 
 To run PAL object code:
 
@@ -48,6 +54,22 @@ cd pal
 ## Testing
 
 Test programs live in `tests/`, one folder per phase. Each construct gets at least one valid and one malformed example. Earlier phase tests are rerun after each new phase to catch regressions.
+
+Run the sample programs that came with the starter kit (each should finish with 0 errors):
+
+```
+cd compiler
+for f in program1 program1_test program2 program3 program4 program5 program6 program7 program8 program9; do echo "== $f"; ./compiler $f; done
+```
+
+Run the scanner tests:
+
+```
+cd compiler
+for f in ../tests/scanner/*.lille; do echo "== $f"; ./compiler $f; done
+```
+
+Expected error counts: `err_numbers.lille` 5, `all_nums.lille` 5, `err_strings.lille` 4. All other scanner tests finish with 0 errors.
 
 ## Notes
 
