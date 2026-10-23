@@ -74,4 +74,4 @@ Expected error counts: `err_numbers.lille` 5, `all_nums.lille` 5, `err_strings.l
 ## Notes
 
 - Language reference: the lille syntax and semantics handout is the authority for grammar and semantic rules.
-- Repo on GitLab not GitHub (unless I need to switch)
+- README created by Claude and manually checked for errors
