@@ -1,0 +1,4 @@
+-- expect Integer 1, range symbol, Integer 10 (each line)
+1..10
+1 .. 10
+for i in 1..10 loop

@@ -1,0 +1,2 @@
+-- expect valid numbers with exponents
+2.5e+3 1E+5 3.0E+2

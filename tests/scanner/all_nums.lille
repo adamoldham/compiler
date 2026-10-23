@@ -1,0 +1,38 @@
+-- all_nums.lille: every number case in one file
+-- Expected: 5 lexical errors total, on the lines marked ERROR below.
+-- Each valid number should print one Integer or Real token with the stated value.
+
+-- integers: Integer 0, 42, 12345
+0
+42
+12345
+
+-- reals: Real 3.14, 0.5, 100.25
+3.14
+0.5
+100.25
+
+-- exponents: Integer 1E+5 (100000), Real 2.5e+3 (2500.0), Real 3.0E-2 (0.03)
+1E+5
+2.5e+3
+3.0E-2
+
+-- range: Integer 1, range symbol, Integer 10 (twice, second with spaces)
+1..10
+1 .. 10
+
+-- range with identifier: Integer 3, range symbol, Identifier X
+3..x
+
+-- ERROR 1: period with no digit after it
+3.
+-- ERROR 2: period followed by a non-digit, then Identifier X should scan normally
+3.x
+-- ERROR 3: exponent marker with nothing after it
+5E
+-- ERROR 4: exponent sign with no digits
+5E+
+-- ERROR 5: negative exponent on an integer
+7E-2
+-- scanning must continue after the errors: Integer 99
+99

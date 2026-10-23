@@ -13,6 +13,8 @@
 #include <string>
 #include <cctype>
 #include <cmath>
+#include <climits> // for INT_MAX
+#include <cfloat> // for FLT_MAX
 
 #include "symbol.h"
 #include "error_handler.h"
@@ -397,10 +399,32 @@ void scanner::scan_string()
     	// the source file. 2 adjacent double quote marks are interpreted as a single
     	// double quote character within the string.
     
-    	// TO BE COMPLETED BEFORE THE SCANNER FUNCTIONS PROPERLY AND THE
-    	// PARSER CAN BE STARTED.
+	bool terminated {false};
 
-	// INSERT CODE HERE.
+	current_string_value = "";
+	get_char(); // consume the opening quote
+	while (!terminated and (next_char != end_marker))
+	{
+		if (next_char == '"')
+		{
+			if (following_char() == '"')
+			{
+				current_string_value += '"'; // two quotes in a row are one quote inside the string
+				get_char(); // move onto the second quote
+				get_char(); // move past it
+			}
+			else
+				terminated = true; // closing quote, next_char stays on it
+		}
+		else
+		{
+			current_string_value += next_char;
+			get_char();
+		}
+	}
+	if (!terminated)
+		error->flag(current_line_number, current_pos_on_line, 60); // string must end before the end of the line
+	current_symbol = new symbol(symbol::strng);
 }
 
 
@@ -509,13 +533,111 @@ void scanner::scan_alpha()
 void scanner::scan_digit()
 {
 	// scan in a token beginning with a digit
-	// Note that a unary operator such as -1 would be detected as a minus sign followed by a digit.
+	// a unary operator such as -1 would be detected as a minus sign followed by a digit
 
-    	// TO BE COMPLETED BEFORE THE SCANNER FUNCTIONS PROPERLY AND THE
-    	// PARSER CAN BE STARTED.
 
-	// INSERT CODE HERE.
+	bool int_too_large {false}; // set once the value no longer fits in an int. only an error if the number turns out to be an integer.
+	double whole_part {0.0}; // the same digits held as a double in case it turns out to be a real number
+	double real_val {0.0}; // working value for a real number. Checked against FLT_MAX before it is stored.
 
+	current_integer_value = 0;
+	while (isdigit(next_char))
+	{
+		int digit = next_char - '0';
+		if (int_too_large or (current_integer_value > (INT_MAX - digit) / 10))
+			int_too_large = true;
+		else
+			current_integer_value = current_integer_value * 10 + digit;
+		whole_part = whole_part * 10 + digit;
+		get_char();
+	}
+	current_symbol = new symbol(symbol::integer);
+
+
+	// a single '.' makes this a real number; '.' followed by another '.' is the range symbol (1..10),
+	// so the number ends here as an integer
+	if ((next_char == '.') and (following_char() != '.'))
+	{
+		real_val = whole_part;
+		get_char();		// consume the '.'
+		if (!isdigit(next_char))
+			error->flag(current_line_number, current_pos_on_line, 63); // real number must have digits after the dot
+
+		double scale = 0.1; // place value of the next fraction digit
+		while (isdigit(next_char))
+		{
+			real_val += (next_char - '0') * scale;
+			scale /= 10;
+			get_char();
+		}
+		current_symbol = new symbol(symbol::real_num);
+	}
+
+
+	// exponents: E or e, then a sign, then digits
+	// applies to both integers and reals
+	if ((next_char == 'E') or (next_char == 'e'))
+	{
+		bool is_real = (current_symbol->get_sym() == symbol::real_num);
+		bool negative = false;
+		int exponent = 0;
+		int exponent_digits = 0;
+		const int max_exponent_digits = 3;
+
+		get_char(); // consume the E
+		if ((next_char == '+') or (next_char == '-'))
+		{
+			negative = (next_char == '-');
+			get_char(); // consume the sign
+		}
+		if (!isdigit(next_char))
+			error->flag(current_line_number, current_pos_on_line, 64); // must have digits after exponent symbol
+
+		while (isdigit(next_char))
+		{
+			exponent_digits++;
+			if (exponent_digits <= max_exponent_digits) // keeps the exponent small enough that it cannot overflow
+				exponent = exponent * 10 + (next_char - '0');
+			get_char();
+		}
+		if (exponent_digits > max_exponent_digits)
+			error->flag(current_line_number, current_pos_on_line, 65); // too many digits in the exponent
+
+		// only apply the exponent if it was well formed
+		if ((exponent_digits >= 1) and (exponent_digits <= max_exponent_digits))
+		{
+			if (is_real)
+				real_val *= pow(10.0, negative ? -exponent : exponent);
+			else if (negative)
+				error->flag(current_line_number, current_pos_on_line, 67); // an integer can only have a positive exponent
+			else
+				for (int i = 0; (i < exponent) and !int_too_large; i++)
+				{
+					if (current_integer_value > INT_MAX / 10)
+						int_too_large = true;
+					else
+						current_integer_value *= 10;
+				}
+		}
+	}
+
+	if (current_symbol->get_sym() == symbol::real_num)
+	{
+		if (!(real_val <= FLT_MAX)) // written this way so infinity and NaN are caught too
+		{
+			error->flag(current_line_number, current_pos_on_line, 66); // floating point number too large or malformed
+			real_val = FLT_MAX;
+		}
+		current_real_value = real_val;
+	}
+	else if (int_too_large)
+		error->flag(current_line_number, current_pos_on_line, 68); // integer number too large or malformed
+
+	// flag is used to increment error_num and inserts into linked list
+	// returns nothing, doesn't stop scan
+	// error_handler.cpp lines 149-155 have error codes
+	// should be error nums 62-68
+	// 62 isnt used because 68 already covers that
 }
 
 
