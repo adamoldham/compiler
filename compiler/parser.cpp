@@ -61,9 +61,16 @@ bool parser::first_of_expr()
 }
 
 bool parser::first_of_statement()
+// FIRST(statement) = { identifier, exit, return, read, write, writeln, null, if, loop, for, while }
+// used to decide whether another statement follows in a statement_list.
+// FOLLOW(statement_list) = { end, elsif, else } is disjoint from this set.
 {
-	// TODO
-	return false;
+	return scan->have(symbol::identifier) or scan->have(symbol::exit_sym)
+		or scan->have(symbol::return_sym) or scan->have(symbol::read_sym)
+		or scan->have(symbol::write_sym) or scan->have(symbol::writeln_sym)
+		or scan->have(symbol::null_sym) or scan->have(symbol::if_sym)
+		or scan->have(symbol::loop_sym) or scan->have(symbol::for_sym)
+		or scan->have(symbol::while_sym);
 }
 
 void parser::parse_expr_list()
@@ -89,8 +96,19 @@ void parser::parse_prog()
 }
 
 void parser::parse_block()
+// <block> ::= { <declaration> }* begin <statement_list> end [ <ident> ]
+// FIRST(block) = { identifier, procedure, function, begin }    FOLLOW(block) = { ; }
+// the declarations loop is added later. for now the token must be begin.
+// the name after end is optional and is taken when the token is an identifier,
+// since FOLLOW(block) = { ; } does not contain identifier.
 {
-	// TODO: <block> ::= { <declaration> }* begin <statement_list> end [ <ident> ]
+	if (!scan->have(symbol::begin_sym))
+		syntax_error(78); // declaration or 'begin' expected
+	expect(symbol::begin_sym);
+	parse_statement_list();
+	expect(symbol::end_sym);
+	if (scan->have(symbol::identifier))
+		expect(symbol::identifier);
 }
 
 //////////////////////////////////////// declarations ////////////////////////////////////////
@@ -128,18 +146,36 @@ void parser::parse_param_kind()
 //////////////////////////////////////// statements ////////////////////////////////////////
 
 void parser::parse_statement_list()
+// <statement_list> ::= <statement> ; { <statement> ; }*
+// at least one statement is required, so FIRST(statement) is checked first.
+// every statement must end with ';'. the loop continues while the next token
+// can start another statement and stops on FOLLOW(statement_list) = { end, elsif, else }.
 {
-	// TODO: <statement> ; { <statement> ; }*
+	if (!first_of_statement())
+		syntax_error(80); // statement expected
+	do
+	{
+		parse_statement();
+		expect(symbol::semicolon_sym);
+	} while (first_of_statement());
 }
 
 void parser::parse_statement()
+// <statement> ::= <simple_statement> | <compound_statement>
+// compound statements are added later. for now every statement is simple.
 {
-	// TODO: <simple_statement> | <compound_statement>
+	parse_simple_statement();
 }
 
 void parser::parse_simple_statement()
+// <simple_statement> ::= ... | null
+// each alternative starts with its own token, so one token of lookahead picks it.
+// only null is done so far. the other alternatives are added one at a time.
 {
-	// TODO: call/assign, exit, return, read, write, writeln, null
+	if (scan->have(symbol::null_sym))
+		expect(symbol::null_sym);
+	else
+		syntax_error(83); // a simple statement expected
 }
 
 void parser::parse_compound_statement()
