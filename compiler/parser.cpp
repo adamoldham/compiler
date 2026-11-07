@@ -55,9 +55,16 @@ void parser::parse()
 }
 
 bool parser::first_of_expr()
+// FIRST(expr) = FIRST(simple_expr) = FIRST(expr2) = FIRST(term) = FIRST(factor)
+//             = { +, -, not, odd, (, identifier, integer, real_num, strng, true, false }
+// used to decide whether an optional expression is present.
 {
-	// TODO
-	return false;
+	return scan->have(symbol::plus_sym) or scan->have(symbol::minus_sym)
+		or scan->have(symbol::not_sym) or scan->have(symbol::odd_sym)
+		or scan->have(symbol::left_paren_sym) or scan->have(symbol::identifier)
+		or scan->have(symbol::integer) or scan->have(symbol::real_num)
+		or scan->have(symbol::strng) or scan->have(symbol::true_sym)
+		or scan->have(symbol::false_sym);
 }
 
 bool parser::first_of_statement()
@@ -74,8 +81,15 @@ bool parser::first_of_statement()
 }
 
 void parser::parse_expr_list()
+// <expr> { , <expr> }*
+// helper, not a grammar nonterminal. a comma is the only token that continues the list.
 {
-	// TODO: <expr> { , <expr> }*
+	parse_expr();
+	while (scan->have(symbol::comma_sym))
+	{
+		expect(symbol::comma_sym);
+		parse_expr();
+	}
 }
 
 //////////////////////////////////////// program and block ////////////////////////////////////////
@@ -168,11 +182,30 @@ void parser::parse_statement()
 }
 
 void parser::parse_simple_statement()
-// <simple_statement> ::= ... | null
+// <simple_statement> ::= <ident> [ ( <expr> { , <expr> }* ) ] | <ident> := <expr> | ... | null
 // each alternative starts with its own token, so one token of lookahead picks it.
-// only null is done so far. the other alternatives are added one at a time.
+// done so far: the two <ident> alternatives and null. the rest are added one at a time.
+// the two <ident> alternatives share the prefix <ident>, so after it the next token decides:
+//   :=  assignment      (  call with arguments      ;  call with no arguments
+// FOLLOW(simple_statement) = { ; }
 {
-	if (scan->have(symbol::null_sym))
+	if (scan->have(symbol::identifier))
+	{
+		expect(symbol::identifier);
+		if (scan->have(symbol::becomes_sym))
+		{
+			expect(symbol::becomes_sym);
+			parse_expr();
+		}
+		else if (scan->have(symbol::left_paren_sym))
+		{
+			expect(symbol::left_paren_sym);
+			parse_expr_list();
+			expect(symbol::right_paren_sym);
+		}
+		// else: empty. a call with no arguments. the next token must be ';' (FOLLOW)
+	}
+	else if (scan->have(symbol::null_sym))
 		expect(symbol::null_sym);
 	else
 		syntax_error(83); // a simple statement expected
@@ -206,41 +239,157 @@ void parser::parse_loop_statement()
 //////////////////////////////////////// expressions ////////////////////////////////////////
 
 void parser::parse_range()
+// <range> ::= <simple_expr> .. <simple_expr>
+// FIRST(range) = FIRST(simple_expr)    FOLLOW(range) = FOLLOW(expr) + { loop }
 {
-	// TODO: <simple_expr> .. <simple_expr>
+	parse_simple_expr();
+	expect(symbol::range_sym);
+	parse_simple_expr();
 }
 
 void parser::parse_expr()
+// <expr> ::= <simple_expr> [ <relop> <simple_expr> ]
+//          | <simple_expr> in <range>
+// both alternatives start with <simple_expr> (common prefix), so it is parsed
+// once (left factoring) and the next token picks the rest:
+//   FIRST(relop) = { =, <>, <, <=, >, >= }    relational comparison
+//   { in }                                    range test
+//   anything else: the optional part is empty (token must be in FOLLOW(expr))
+// relop and in are also in FOLLOW(primary) because of "not <expr>" and
+// "odd <expr>". this is resolved greedily: the innermost expr takes the
+// operator, so "not a = b" means "not (a = b)".
 {
-	// TODO: <simple_expr> [ <relop> <simple_expr> ] | <simple_expr> in <range>
+	parse_simple_expr();
+	if (scan->have(symbol::equals_sym) or scan->have(symbol::not_equals_sym)
+		or scan->have(symbol::less_than_sym) or scan->have(symbol::less_or_equal_sym)
+		or scan->have(symbol::greater_than_sym) or scan->have(symbol::greater_or_equal_sym))
+	{
+		scan->get_token(); // consume the relop (already identified by have())
+		parse_simple_expr();
+	}
+	else if (scan->have(symbol::in_sym))
+	{
+		expect(symbol::in_sym);
+		parse_range();
+	}
 }
 
 void parser::parse_bool()
+// <bool> ::= true | false
+// FIRST(bool) = { true, false }
 {
-	// TODO: true | false
+	if (scan->have(symbol::true_sym))
+		expect(symbol::true_sym);
+	else if (scan->have(symbol::false_sym))
+		expect(symbol::false_sym);
+	else
+		syntax_error(112); // literal expected
 }
 
 void parser::parse_simple_expr()
+// <simple_expr> ::= <expr2> { <stringop> <expr2> }*      <stringop> ::= &
+// the loop repeats while the next token is &.
 {
-	// TODO: <expr2> { & <expr2> }*
+	parse_expr2();
+	while (scan->have(symbol::ampersand_sym))
+	{
+		expect(symbol::ampersand_sym);
+		parse_expr2();
+	}
 }
 
 void parser::parse_expr2()
+// <expr2> ::= <term> { { <addop> | or } <term> }*       <addop> ::= + | -
+// repeat while the next token is +, - or or. a loop (not recursion) avoids
+// left recursion and makes the operators left associative.
 {
-	// TODO: <term> { { + | - | or } <term> }*
+	parse_term();
+	while (scan->have(symbol::plus_sym) or scan->have(symbol::minus_sym)
+		or scan->have(symbol::or_sym))
+	{
+		scan->get_token(); // consume + - or or (already identified by have())
+		parse_term();
+	}
 }
 
 void parser::parse_term()
+// <term> ::= <factor> { { <multop> | and } <factor> }*  <multop> ::= * | /
+// repeat while the next token is *, / or and.
 {
-	// TODO: <factor> { { * | / | and } <factor> }*
+	parse_factor();
+	while (scan->have(symbol::asterisk_sym) or scan->have(symbol::slash_sym)
+		or scan->have(symbol::and_sym))
+	{
+		scan->get_token(); // consume * / or and (already identified by have())
+		parse_factor();
+	}
 }
 
 void parser::parse_factor()
+// <factor> ::= <primary> [ ** <primary> ]
+//            | [ <addop> ] <primary>
+// FIRST(primary) does not contain + or -, so a leading sign selects the second
+// alternative. only the first alternative may be followed by **.
 {
-	// TODO: <primary> [ ** <primary> ] | [ + | - ] <primary>
+	if (scan->have(symbol::plus_sym) or scan->have(symbol::minus_sym))
+	{
+		scan->get_token(); // consume the unary sign
+		parse_primary();
+	}
+	else
+	{
+		parse_primary();
+		if (scan->have(symbol::power_sym)) // ** is optional
+		{
+			expect(symbol::power_sym);
+			parse_primary();
+		}
+	}
 }
 
 void parser::parse_primary()
+// <primary> ::= not <expr> | odd <expr> | ( <simple_expr> )
+//             | <ident> [ ( <expr> { , <expr> }* ) ]
+//             | <number> | <string> | <bool>
+// every alternative starts with a different token, so one token of lookahead
+// chooses. for <ident>, a following ( means a function call with arguments,
+// otherwise the identifier stands alone (( is not in FOLLOW(primary)).
+// eof is not part of the grammar, so it is not accepted here.
 {
-	// TODO: not | odd | ( simple_expr ) | ident [ ( args ) ] | number | string | bool
+	if (scan->have(symbol::not_sym))
+	{
+		expect(symbol::not_sym);
+		parse_expr();
+	}
+	else if (scan->have(symbol::odd_sym))
+	{
+		expect(symbol::odd_sym);
+		parse_expr();
+	}
+	else if (scan->have(symbol::left_paren_sym))
+	{
+		expect(symbol::left_paren_sym);
+		parse_simple_expr(); // the grammar allows a simple_expr here, not a full expr
+		expect(symbol::right_paren_sym);
+	}
+	else if (scan->have(symbol::identifier))
+	{
+		expect(symbol::identifier);
+		if (scan->have(symbol::left_paren_sym))
+		{
+			expect(symbol::left_paren_sym);
+			parse_expr_list();
+			expect(symbol::right_paren_sym);
+		}
+	}
+	else if (scan->have(symbol::integer))
+		expect(symbol::integer);
+	else if (scan->have(symbol::real_num))
+		expect(symbol::real_num);
+	else if (scan->have(symbol::strng))
+		expect(symbol::strng);
+	else if (scan->have(symbol::true_sym) or scan->have(symbol::false_sym))
+		parse_bool();
+	else
+		syntax_error(92); // string or expression expected
 }
