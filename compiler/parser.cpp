@@ -182,9 +182,14 @@ void parser::parse_statement()
 }
 
 void parser::parse_simple_statement()
-// <simple_statement> ::= <ident> [ ( <expr> { , <expr> }* ) ] | <ident> := <expr> | ... | null
+// <simple_statement> ::= <ident> [ ( <expr> { , <expr> }* ) ]
+//                      | <ident> := <expr>
+//                      | exit [ when <expr> ] | return [ <expr> ]
+//                      | read [ ( ] <ident> { , <ident> }* [ ) ]
+//                      | write [ ( ] <expr> { , <expr> }* [ ) ]
+//                      | writeln [ ( ] [ <expr> { , <expr> }* ] [ ) ]
+//                      | null
 // each alternative starts with its own token, so one token of lookahead picks it.
-// done so far: the two <ident> alternatives and null. the rest are added one at a time.
 // the two <ident> alternatives share the prefix <ident>, so after it the next token decides:
 //   :=  assignment      (  call with arguments      ;  call with no arguments
 // FOLLOW(simple_statement) = { ; }
@@ -204,6 +209,62 @@ void parser::parse_simple_statement()
 			expect(symbol::right_paren_sym);
 		}
 		// else: empty. a call with no arguments. the next token must be ';' (FOLLOW)
+	}
+	else if (scan->have(symbol::exit_sym))
+	{
+		expect(symbol::exit_sym);
+		if (scan->have(symbol::when_sym))
+		{
+			expect(symbol::when_sym); // safe: have() matched. must_be() text for 'when' is wrong in the starter code
+			parse_expr();
+		}
+	}
+	else if (scan->have(symbol::return_sym))
+	{
+		expect(symbol::return_sym);
+		if (first_of_expr()) // FIRST(expr) is disjoint from FOLLOW = { ; }
+			parse_expr();
+	}
+	else if (scan->have(symbol::read_sym))
+	{
+		expect(symbol::read_sym);
+		// the ( is the optional wrapper paren. an identifier follows, never an
+		// expression, so there is no ambiguity here.
+		bool paren = scan->have(symbol::left_paren_sym);
+		if (paren)
+			expect(symbol::left_paren_sym);
+		expect(symbol::identifier);
+		while (scan->have(symbol::comma_sym))
+		{
+			expect(symbol::comma_sym);
+			expect(symbol::identifier);
+		}
+		if (paren)
+			expect(symbol::right_paren_sym);
+	}
+	else if (scan->have(symbol::write_sym))
+	{
+		expect(symbol::write_sym); // safe: have() matched. must_be() text for 'write' is wrong in the starter code
+		// ( is in FIRST(expr) and is also the optional wrapper paren. decision:
+		// a ( directly after write/writeln is always the wrapper paren, and a
+		// matching ) is then required. so "write (a+b)*c" is not accepted.
+		bool paren = scan->have(symbol::left_paren_sym);
+		if (paren)
+			expect(symbol::left_paren_sym);
+		parse_expr_list();
+		if (paren)
+			expect(symbol::right_paren_sym);
+	}
+	else if (scan->have(symbol::writeln_sym))
+	{
+		expect(symbol::writeln_sym); // safe: have() matched. must_be() text for 'writeln' is wrong in the starter code
+		bool paren = scan->have(symbol::left_paren_sym); // same wrapper paren rule as write
+		if (paren)
+			expect(symbol::left_paren_sym);
+		if (first_of_expr()) // the expression list is optional. FOLLOW = { ; ) }
+			parse_expr_list();
+		if (paren)
+			expect(symbol::right_paren_sym);
 	}
 	else if (scan->have(symbol::null_sym))
 		expect(symbol::null_sym);
