@@ -1,0 +1,13 @@
+program p is
+begin
+	x := -3 + 4 * (5 - 2) / 1;
+	x := 2.5 ** 2;
+	x := a > 3 and not b or c <= 10;
+	x := i in 1 .. 10;
+	x := odd i;
+	x := "a" & "b" & "c";
+	x := (i) = 4;
+	x := f(1, 2 + 3, g(4));
+	proc;
+	proc(1, x);
+end p;
