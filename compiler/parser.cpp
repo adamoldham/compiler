@@ -20,18 +20,38 @@ parser::parser(scanner* s, error_handler* e) : scan(s), err(e)
 }
 
 void parser::expect(symbol::symbol_type s)
+// require the current token to be s and advance past it. must_be() reports a
+// mismatch but neither advances nor throws, so compare the error count before
+// and after and stop at the first error.
 {
-	// TODO: must_be(s), compare error_count() before and after, throw syntax_abort
+	int errors_before = err->error_count();
+	scan->must_be(s);
+	if (err->error_count() > errors_before)
+		throw syntax_abort();
 }
 
 void parser::syntax_error(int error_no)
+// report a syntax error at the current token (message, line and position come
+// from the error handler), then stop parsing.
 {
-	// TODO: err->flag(scan->this_token(), error_no); throw syntax_abort
+	err->flag(scan->this_token(), error_no);
+	throw syntax_abort();
 }
 
 void parser::parse()
+// entry point. the scanner does not read a token on construction, so the first
+// token is fetched here before parsing starts. syntax_abort is caught here so
+// the driver can still print its final error count.
 {
-	// TODO: get_token() once to prime the scanner, then parse_prog() inside try/catch(syntax_abort)
+	try
+	{
+		scan->get_token();
+		parse_prog();
+	}
+	catch (syntax_abort&)
+	{
+		// the error has already been reported
+	}
 }
 
 bool parser::first_of_expr()
@@ -54,8 +74,18 @@ void parser::parse_expr_list()
 //////////////////////////////////////// program and block ////////////////////////////////////////
 
 void parser::parse_prog()
+// <prog> ::= program <ident> is <block> ;
+// FIRST(prog) = { program }    FOLLOW(prog) = { end_of_program }
 {
-	// TODO: <prog> ::= program <ident> is <block> ;
+	expect(symbol::program_sym);
+	expect(symbol::identifier);
+	expect(symbol::is_sym);
+	parse_block();
+	expect(symbol::semicolon_sym);
+
+	// FOLLOW(prog) is only end_of_program, so nothing may come after the final ';'
+	if (!scan->have(symbol::end_of_program))
+		syntax_error(77); // no symbols permitted after end of program
 }
 
 void parser::parse_block()

@@ -2,7 +2,7 @@ all:	compiler.o error_handler.o lille_exception.o scanner.o parser.o id_table.o 
 	g++ -o compiler compiler.o error_handler.o lille_exception.o scanner.o parser.o symbol.o token.o
 	echo Compilation complete.
 
-compiler.o:	id_table.o error_handler.o lille_exception.o scanner.o symbol.o compiler.cpp
+compiler.o:	id_table.o error_handler.o lille_exception.o scanner.o symbol.o compiler.cpp parser.o
 	g++ -std=c++20 -c compiler.cpp
 
 error_handler.o: lille_exception.o token.o error_handler.h error_handler.cpp
