@@ -1,0 +1,32 @@
+program comp is
+	i, n : integer;
+begin
+	if i > 0 then
+		n := 1;
+	elsif i = 0 then
+		n := 2;
+	elsif i < -5 then
+		n := 3;
+	else
+		n := 4;
+	end if;
+
+	loop
+		exit when i > 3;
+		exit;
+	end loop;
+
+	while i < 10 loop
+		i := i + 1;
+	end loop;
+
+	for k in 1..5 loop
+		write k;
+	end loop;
+
+	for k in reverse 1 .. n loop
+		if k = 2 then
+			null;
+		end if;
+	end loop;
+end comp;

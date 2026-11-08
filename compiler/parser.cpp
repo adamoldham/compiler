@@ -278,9 +278,14 @@ void parser::parse_statement_list()
 
 void parser::parse_statement()
 // <statement> ::= <simple_statement> | <compound_statement>
-// compound statements are added later. for now every statement is simple.
+// FIRST(compound_statement) = { if, loop, for, while } picks the compound branch.
+// every other token in FIRST(statement) starts a simple statement.
 {
-	parse_simple_statement();
+	if (scan->have(symbol::if_sym) or scan->have(symbol::loop_sym)
+		or scan->have(symbol::for_sym) or scan->have(symbol::while_sym))
+		parse_compound_statement();
+	else
+		parse_simple_statement();
 }
 
 void parser::parse_simple_statement()
@@ -375,28 +380,78 @@ void parser::parse_simple_statement()
 }
 
 void parser::parse_compound_statement()
+// <compound_statement> ::= <if_statement> | <loop_statement> | <for_statement> | <while_statement>
+// one keyword each: if, loop, for, while.
 {
-	// TODO: if | loop | for | while
+	if (scan->have(symbol::if_sym))
+		parse_if_statement();
+	else if (scan->have(symbol::loop_sym))
+		parse_loop_statement();
+	else if (scan->have(symbol::for_sym))
+		parse_for_statement();
+	else if (scan->have(symbol::while_sym))
+		parse_while_statement();
+	else
+		syntax_error(101); // compound statement expected
 }
 
 void parser::parse_if_statement()
+// <if_statement> ::= if <expr> then <statement_list>
+//                    { elsif <expr> then <statement_list> }*
+//                    [ else <statement_list> ]
+//                    end if
+// the elsif loop runs while the next token is elsif and the else part is taken
+// only on else. otherwise the token must be in FOLLOW(statement_list) = { end }.
+// there is no dangling-else problem because every if is closed by "end if".
 {
-	// TODO
+	expect(symbol::if_sym);
+	parse_expr();
+	expect(symbol::then_sym);
+	parse_statement_list();
+	while (scan->have(symbol::elsif_sym))
+	{
+		expect(symbol::elsif_sym);
+		parse_expr();
+		expect(symbol::then_sym);
+		parse_statement_list();
+	}
+	if (scan->have(symbol::else_sym))
+	{
+		expect(symbol::else_sym);
+		parse_statement_list();
+	}
+	expect(symbol::end_sym);
+	expect(symbol::if_sym);
 }
 
 void parser::parse_while_statement()
+// <while_statement> ::= while <expr> <loop_statement>
 {
-	// TODO
+	expect(symbol::while_sym); // safe: only called after have(while_sym). must_be() text for 'while' is wrong in the starter code
+	parse_expr();
+	parse_loop_statement();
 }
 
 void parser::parse_for_statement()
+// <for_statement> ::= for <ident> in [ reverse ] <range> <loop_statement>
+// reverse is optional. FIRST(range) = FIRST(simple_expr) does not contain reverse.
 {
-	// TODO
+	expect(symbol::for_sym);
+	expect(symbol::identifier);
+	expect(symbol::in_sym);
+	if (scan->have(symbol::reverse_sym))
+		expect(symbol::reverse_sym);
+	parse_range();
+	parse_loop_statement();
 }
 
 void parser::parse_loop_statement()
+// <loop_statement> ::= loop <statement_list> end loop
 {
-	// TODO
+	expect(symbol::loop_sym);
+	parse_statement_list();
+	expect(symbol::end_sym);
+	expect(symbol::loop_sym);
 }
 
 //////////////////////////////////////// expressions ////////////////////////////////////////
