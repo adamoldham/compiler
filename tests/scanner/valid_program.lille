@@ -1,0 +1,17 @@
+-- valid lille program using numeric and string literals
+program demo is
+  count : integer;
+  total : real;
+  limit : constant integer := 100;
+  ratio : constant real := 2.5e+3;
+  greeting : constant string := "Hello, ""lille""";
+begin
+  count := 42;
+  total := 3.14;
+  for i in 1..10 loop
+    write("i = ");
+    writeln(i);
+  end loop;
+  writeln("-- not a comment");
+  writeln("");
+end demo;
