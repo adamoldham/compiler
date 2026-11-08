@@ -112,10 +112,17 @@ void parser::parse_prog()
 void parser::parse_block()
 // <block> ::= { <declaration> }* begin <statement_list> end [ <ident> ]
 // FIRST(block) = { identifier, procedure, function, begin }    FOLLOW(block) = { ; }
-// the declarations loop is added later. for now the token must be begin.
+// the declarations loop runs while the token is in FIRST(declaration). because it
+// is a loop, declarations can only come before begin: after begin the parser reads
+// statements, so a declaration there fails as a statement. if the token is not a
+// declaration start it must be begin (the only other member of FIRST(block)).
 // the name after end is optional and is taken when the token is an identifier,
 // since FOLLOW(block) = { ; } does not contain identifier.
 {
+	while (scan->have(symbol::identifier) or scan->have(symbol::procedure_sym)
+		or scan->have(symbol::function_sym))
+		parse_declaration();
+
 	if (!scan->have(symbol::begin_sym))
 		syntax_error(78); // declaration or 'begin' expected
 	expect(symbol::begin_sym);
@@ -128,33 +135,128 @@ void parser::parse_block()
 //////////////////////////////////////// declarations ////////////////////////////////////////
 
 void parser::parse_declaration()
+// <declaration> ::= <ident_list> : [ constant ] <type> [ := <number> | := <string> | := <bool> ] ;
+//                 | procedure <ident> [ ( <param_list> ) ] is <block> ;
+//                 | function <ident> [ ( <param_list> ) ] return <type> is <block> ;
+// FIRST(declaration) = { identifier, procedure, function }. each alternative has a
+// different first token, so one token of lookahead picks the branch.
+// FOLLOW(declaration) = FIRST(declaration) + { begin }.
 {
-	// TODO: <ident_list> : [ constant ] <type> [ := literal ] ; | procedure ... | function ...
+	if (scan->have(symbol::procedure_sym))
+	{
+		expect(symbol::procedure_sym);
+		expect(symbol::identifier);
+		if (scan->have(symbol::left_paren_sym)) // optional parameter list. FOLLOW is { is }
+		{
+			expect(symbol::left_paren_sym);
+			parse_param_list();
+			expect(symbol::right_paren_sym);
+		}
+		expect(symbol::is_sym);
+		parse_block();
+		expect(symbol::semicolon_sym);
+	}
+	else if (scan->have(symbol::function_sym))
+	{
+		expect(symbol::function_sym);
+		expect(symbol::identifier);
+		if (scan->have(symbol::left_paren_sym)) // optional parameter list. FOLLOW is { return }
+		{
+			expect(symbol::left_paren_sym);
+			parse_param_list();
+			expect(symbol::right_paren_sym);
+		}
+		expect(symbol::return_sym);
+		parse_type();
+		expect(symbol::is_sym);
+		parse_block();
+		expect(symbol::semicolon_sym);
+	}
+	else if (scan->have(symbol::identifier))
+	{
+		// variable or constant declaration
+		parse_ident_list();
+		expect(symbol::colon_sym);
+		if (scan->have(symbol::constant_sym))
+			expect(symbol::constant_sym);
+		parse_type();
+		// optional initial value. whether := is legal (constants only) is a semantic
+		// check for phase 3. the grammar only allows a number, string or bool after it.
+		if (scan->have(symbol::becomes_sym))
+		{
+			expect(symbol::becomes_sym);
+			if (scan->have(symbol::integer))
+				expect(symbol::integer);
+			else if (scan->have(symbol::real_num))
+				expect(symbol::real_num);
+			else if (scan->have(symbol::strng))
+				expect(symbol::strng);
+			else if (scan->have(symbol::true_sym) or scan->have(symbol::false_sym))
+				parse_bool();
+			else
+				syntax_error(112); // literal expected
+		}
+		expect(symbol::semicolon_sym);
+	}
+	else
+		syntax_error(106); // variable, procedure or function declaration expected
 }
 
 void parser::parse_type()
+// <type> ::= integer | real | string | boolean
+// FIRST(type) = { integer, real, string, boolean }
+// FOLLOW(type) = { :=, ;, is, ) }
 {
-	// TODO: integer | real | string | boolean
+	if (scan->have(symbol::integer_sym) or scan->have(symbol::real_sym)
+		or scan->have(symbol::string_sym) or scan->have(symbol::boolean_sym))
+		scan->get_token(); // consume the type keyword (already identified by have())
+	else
+		syntax_error(96); // type name integer, real, string or boolean expected
 }
 
 void parser::parse_param_list()
+// <param_list> ::= <param> { ; <param> }*
+// FIRST(param_list) = { identifier }    FOLLOW(param_list) = { ) }
+// a ';' continues the list. ')' (in FOLLOW) ends it.
 {
-	// TODO: <param> { ; <param> }*
+	parse_param();
+	while (scan->have(symbol::semicolon_sym))
+	{
+		expect(symbol::semicolon_sym);
+		parse_param();
+	}
 }
 
 void parser::parse_param()
+// <param> ::= <ident_list> : <param_kind> <type>
 {
-	// TODO: <ident_list> : <param_kind> <type>
+	parse_ident_list();
+	expect(symbol::colon_sym);
+	parse_param_kind();
+	parse_type();
 }
 
 void parser::parse_ident_list()
+// <ident_list> ::= <ident> { , <ident> }*
+// FIRST(ident_list) = { identifier }    FOLLOW(ident_list) = { : }
+// a ',' continues the list. ':' (in FOLLOW) ends it.
 {
-	// TODO: <ident> { , <ident> }*
+	expect(symbol::identifier);
+	while (scan->have(symbol::comma_sym))
+	{
+		expect(symbol::comma_sym);
+		expect(symbol::identifier);
+	}
 }
 
 void parser::parse_param_kind()
+// <param_kind> ::= value | ref
+// FIRST(param_kind) = { value, ref }
 {
-	// TODO: value | ref
+	if (scan->have(symbol::value_sym) or scan->have(symbol::ref_sym))
+		scan->get_token(); // consume value or ref (already identified by have())
+	else
+		syntax_error(94); // parameter mode expected
 }
 
 //////////////////////////////////////// statements ////////////////////////////////////////

@@ -1,0 +1,6 @@
+program p is
+	x : integer;
+begin
+	x := 3;
+	y : integer;
+end p;

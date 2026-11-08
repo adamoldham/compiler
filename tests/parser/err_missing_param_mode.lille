@@ -1,0 +1,8 @@
+program p is
+	procedure q(a : integer) is
+	begin
+		null;
+	end q;
+begin
+	null;
+end p;
