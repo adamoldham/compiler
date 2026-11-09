@@ -10,7 +10,7 @@
  *             USA
  *
  * Written:            1 June 2020
- * Last modified:      1 June 2023
+ * Last modified:      8 November 2026 by Adam Oldham
  *
  * Open Source - free to distribute and modify. May not be used for profit.
  *
