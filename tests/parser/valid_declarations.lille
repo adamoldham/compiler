@@ -1,0 +1,24 @@
+program decls is
+	a, b, c : integer;
+	pi : constant real := 3.14;
+	name : constant string := "lille";
+	flag : constant boolean := true;
+	s : string;
+
+	procedure noargs is
+	begin
+		null;
+	end noargs;
+
+	procedure swap(x, y : ref integer; t : value integer) is
+	begin
+		x := y;
+	end swap;
+
+	function twice(n : value integer) return integer is
+	begin
+		return n + n;
+	end twice;
+begin
+	a := twice(3);
+end decls;

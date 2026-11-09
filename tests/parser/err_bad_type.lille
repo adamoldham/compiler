@@ -1,0 +1,5 @@
+program p is
+	x : float;
+begin
+	null;
+end p;

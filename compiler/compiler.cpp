@@ -10,7 +10,7 @@
  *             USA
  *
  * Written:            1 June 2020
- * Last modified:      1 June 2023
+ * Last modified:      8 November 2026 by Adam Oldham
  *
  * Open Source - free to distribute and modify. May not be used for profit.
  *
@@ -40,7 +40,7 @@
 
 #include "lille_exception.h"
 #include "scanner.h"
-//#include "parser.h"
+#include "parser.h"
 #include "symbol.h"
 #include "error_handler.h"
 //#include "code_gen.h"
@@ -61,7 +61,7 @@ string listing_filename;						// name of the listing file to be generated if nee
 
 error_handler* err;								// error handler object
 scanner* scan;									// scanner object
-//parser* parse;									// parser object
+parser* parse;									// parser object
 id_table* id_tab = NULL;								// symbol table object
 //code_gen* code;									// code generator
 
@@ -200,16 +200,11 @@ bool process_command_line(int argc, char *argv[]) {
 			else
 				err = new error_handler(source_filename, listing_filename);
 
-			// THE FOLLOWIG CODE IS FOR TESTING PURPOSES ONLY.
-                        scan = new scanner(source_filename, id_tab, err);
-
-                        token* tok;
-                        do
-                        {
-                                tok = scan->get_token();
-                        } while (tok->get_sym() != symbol::end_of_program);
-                        //END OF CODE FOR TESTING PURPOSES
-
+			// Phase 2: create the scanner and the parser, then parse the whole program.
+			// Syntax errors are reported through the error handler.
+			scan = new scanner(source_filename, id_tab, err);
+			parse = new parser(scan, err);
+			parse->parse();
 
 			// Create a symbol_table object
 

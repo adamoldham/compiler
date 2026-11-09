@@ -1,0 +1,4 @@
+program p is
+	x : integer;
+	x := 3;
+end p;

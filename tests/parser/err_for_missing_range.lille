@@ -1,0 +1,6 @@
+program p is
+begin
+	for k in 1 5 loop
+		null;
+	end loop;
+end p;

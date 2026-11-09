@@ -1,0 +1,15 @@
+program p is
+begin
+	exit;
+	exit when x > 3;
+	return;
+	return x;
+	read x;
+	read (x, y);
+	write "a";
+	write ("a", x);
+	writeln;
+	writeln ();
+	writeln x, y;
+	writeln ("v", x);
+end p;
