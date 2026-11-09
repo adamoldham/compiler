@@ -17,7 +17,7 @@
 
 using namespace std;
 
-// thrown after the first syntax error is reported (error recovery is phase 4)
+// thrown after the first syntax error is reported
 struct syntax_abort {};
 
 class parser {
@@ -61,7 +61,7 @@ private:
 public:
 	parser(scanner* s, error_handler* e);
 
-	void parse(); // parse a whole program. Returns normally, even after a syntax error.
+	void parse(); // parse whole program
 };
 
 #endif /* PARSER_H_ */
