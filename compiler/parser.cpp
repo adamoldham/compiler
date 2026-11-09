@@ -5,7 +5,12 @@
  * Course: CSC-4510 Programming Language Design and Translation
  *
  * Phase 2 (parser). LL(1) recursive-descent parser for lille.
- * SKELETON: every function is an empty stub to be filled in.
+ *
+ * One parse function per grammar nonterminal. Optional parts [ ] are written as
+ * an if and repetition { } as a while. At each choice point one token of
+ * lookahead is tested with have() using the FIRST sets, and the FOLLOW sets
+ * decide when an optional or empty part is skipped. expect() wraps must_be()
+ * and stops at the first syntax error.
  */
 
 #include "parser.h"
@@ -32,14 +37,14 @@ void parser::expect(symbol::symbol_type s)
 
 void parser::syntax_error(int error_no)
 // report a syntax error at the current token (message, line and position come
-// from the error handler), then stop parsing.
+// from the error handler), then stop parsing
 {
 	err->flag(scan->this_token(), error_no);
 	throw syntax_abort();
 }
 
 void parser::parse()
-// entry point. the scanner does not read a token on construction, so the first
+// entry point -- the scanner does not read a token on construction, so the first
 // token is fetched here before parsing starts. syntax_abort is caught here so
 // the driver can still print its final error count.
 {
@@ -57,7 +62,7 @@ void parser::parse()
 bool parser::first_of_expr()
 // FIRST(expr) = FIRST(simple_expr) = FIRST(expr2) = FIRST(term) = FIRST(factor)
 //             = { +, -, not, odd, (, identifier, integer, real_num, strng, true, false }
-// used to decide whether an optional expression is present.
+// used to decide whether an optional expression is present
 {
 	return scan->have(symbol::plus_sym) or scan->have(symbol::minus_sym)
 		or scan->have(symbol::not_sym) or scan->have(symbol::odd_sym)
@@ -82,6 +87,7 @@ bool parser::first_of_statement()
 
 void parser::parse_expr_list()
 // <expr> { , <expr> }*
+
 // helper, not a grammar nonterminal. a comma is the only token that continues the list.
 {
 	parse_expr();
@@ -96,6 +102,7 @@ void parser::parse_expr_list()
 
 void parser::parse_prog()
 // <prog> ::= program <ident> is <block> ;
+
 // FIRST(prog) = { program }    FOLLOW(prog) = { end_of_program }
 {
 	expect(symbol::program_sym);
@@ -111,6 +118,7 @@ void parser::parse_prog()
 
 void parser::parse_block()
 // <block> ::= { <declaration> }* begin <statement_list> end [ <ident> ]
+
 // FIRST(block) = { identifier, procedure, function, begin }    FOLLOW(block) = { ; }
 // the declarations loop runs while the token is in FIRST(declaration). because it
 // is a loop, declarations can only come before begin: after begin the parser reads
@@ -138,6 +146,7 @@ void parser::parse_declaration()
 // <declaration> ::= <ident_list> : [ constant ] <type> [ := <number> | := <string> | := <bool> ] ;
 //                 | procedure <ident> [ ( <param_list> ) ] is <block> ;
 //                 | function <ident> [ ( <param_list> ) ] return <type> is <block> ;
+
 // FIRST(declaration) = { identifier, procedure, function }. each alternative has a
 // different first token, so one token of lookahead picks the branch.
 // FOLLOW(declaration) = FIRST(declaration) + { begin }.
@@ -146,7 +155,7 @@ void parser::parse_declaration()
 	{
 		expect(symbol::procedure_sym);
 		expect(symbol::identifier);
-		if (scan->have(symbol::left_paren_sym)) // optional parameter list. FOLLOW is { is }
+		if (scan->have(symbol::left_paren_sym)) // optional parameter list, FOLLOW is { is }
 		{
 			expect(symbol::left_paren_sym);
 			parse_param_list();
@@ -160,7 +169,7 @@ void parser::parse_declaration()
 	{
 		expect(symbol::function_sym);
 		expect(symbol::identifier);
-		if (scan->have(symbol::left_paren_sym)) // optional parameter list. FOLLOW is { return }
+		if (scan->have(symbol::left_paren_sym)) // optional parameter list, FOLLOW is { return }
 		{
 			expect(symbol::left_paren_sym);
 			parse_param_list();
@@ -204,6 +213,7 @@ void parser::parse_declaration()
 
 void parser::parse_type()
 // <type> ::= integer | real | string | boolean
+
 // FIRST(type) = { integer, real, string, boolean }
 // FOLLOW(type) = { :=, ;, is, ) }
 {
@@ -216,6 +226,7 @@ void parser::parse_type()
 
 void parser::parse_param_list()
 // <param_list> ::= <param> { ; <param> }*
+
 // FIRST(param_list) = { identifier }    FOLLOW(param_list) = { ) }
 // a ';' continues the list. ')' (in FOLLOW) ends it.
 {
@@ -238,6 +249,7 @@ void parser::parse_param()
 
 void parser::parse_ident_list()
 // <ident_list> ::= <ident> { , <ident> }*
+
 // FIRST(ident_list) = { identifier }    FOLLOW(ident_list) = { : }
 // a ',' continues the list. ':' (in FOLLOW) ends it.
 {
@@ -251,6 +263,7 @@ void parser::parse_ident_list()
 
 void parser::parse_param_kind()
 // <param_kind> ::= value | ref
+
 // FIRST(param_kind) = { value, ref }
 {
 	if (scan->have(symbol::value_sym) or scan->have(symbol::ref_sym))
@@ -263,6 +276,7 @@ void parser::parse_param_kind()
 
 void parser::parse_statement_list()
 // <statement_list> ::= <statement> ; { <statement> ; }*
+
 // at least one statement is required, so FIRST(statement) is checked first.
 // every statement must end with ';'. the loop continues while the next token
 // can start another statement and stops on FOLLOW(statement_list) = { end, elsif, else }.
@@ -278,6 +292,7 @@ void parser::parse_statement_list()
 
 void parser::parse_statement()
 // <statement> ::= <simple_statement> | <compound_statement>
+
 // FIRST(compound_statement) = { if, loop, for, while } picks the compound branch.
 // every other token in FIRST(statement) starts a simple statement.
 {
@@ -296,6 +311,7 @@ void parser::parse_simple_statement()
 //                      | write [ ( ] <expr> { , <expr> }* [ ) ]
 //                      | writeln [ ( ] [ <expr> { , <expr> }* ] [ ) ]
 //                      | null
+
 // each alternative starts with its own token, so one token of lookahead picks it.
 // the two <ident> alternatives share the prefix <ident>, so after it the next token decides:
 //   :=  assignment      (  call with arguments      ;  call with no arguments
@@ -315,14 +331,14 @@ void parser::parse_simple_statement()
 			parse_expr_list();
 			expect(symbol::right_paren_sym);
 		}
-		// else: empty. a call with no arguments. the next token must be ';' (FOLLOW)
+		// else: empty. a call with no arguments. the next token must be ';' (FOLLOW).
 	}
 	else if (scan->have(symbol::exit_sym))
 	{
 		expect(symbol::exit_sym);
 		if (scan->have(symbol::when_sym))
 		{
-			expect(symbol::when_sym); // safe: have() matched. must_be() text for 'when' is wrong in the starter code
+			expect(symbol::when_sym); // safe: have() matched. must_be() text for 'when' is wrong in the starter code.
 			parse_expr();
 		}
 	}
@@ -351,7 +367,7 @@ void parser::parse_simple_statement()
 	}
 	else if (scan->have(symbol::write_sym))
 	{
-		expect(symbol::write_sym); // safe: have() matched. must_be() text for 'write' is wrong in the starter code
+		expect(symbol::write_sym); // safe: have() matched. must_be() text for 'write' is wrong in the starter code.
 		// ( is in FIRST(expr) and is also the optional wrapper paren. decision:
 		// a ( directly after write/writeln is always the wrapper paren, and a
 		// matching ) is then required. so "write (a+b)*c" is not accepted.
@@ -364,11 +380,11 @@ void parser::parse_simple_statement()
 	}
 	else if (scan->have(symbol::writeln_sym))
 	{
-		expect(symbol::writeln_sym); // safe: have() matched. must_be() text for 'writeln' is wrong in the starter code
+		expect(symbol::writeln_sym); // safe: have() matched. must_be() text for 'writeln' is wrong in the starter code.
 		bool paren = scan->have(symbol::left_paren_sym); // same wrapper paren rule as write
 		if (paren)
 			expect(symbol::left_paren_sym);
-		if (first_of_expr()) // the expression list is optional. FOLLOW = { ; ) }
+		if (first_of_expr()) // the expression list is optional, FOLLOW = { ; ) }
 			parse_expr_list();
 		if (paren)
 			expect(symbol::right_paren_sym);
@@ -381,7 +397,8 @@ void parser::parse_simple_statement()
 
 void parser::parse_compound_statement()
 // <compound_statement> ::= <if_statement> | <loop_statement> | <for_statement> | <while_statement>
-// one keyword each: if, loop, for, while.
+
+// one keyword each: if, loop, for, while
 {
 	if (scan->have(symbol::if_sym))
 		parse_if_statement();
@@ -400,6 +417,7 @@ void parser::parse_if_statement()
 //                    { elsif <expr> then <statement_list> }*
 //                    [ else <statement_list> ]
 //                    end if
+
 // the elsif loop runs while the next token is elsif and the else part is taken
 // only on else. otherwise the token must be in FOLLOW(statement_list) = { end }.
 // there is no dangling-else problem because every if is closed by "end if".
@@ -427,13 +445,14 @@ void parser::parse_if_statement()
 void parser::parse_while_statement()
 // <while_statement> ::= while <expr> <loop_statement>
 {
-	expect(symbol::while_sym); // safe: only called after have(while_sym). must_be() text for 'while' is wrong in the starter code
+	expect(symbol::while_sym); // safe: only called after have(while_sym). must_be() text for 'while' is wrong in the starter code.
 	parse_expr();
 	parse_loop_statement();
 }
 
 void parser::parse_for_statement()
 // <for_statement> ::= for <ident> in [ reverse ] <range> <loop_statement>
+
 // reverse is optional. FIRST(range) = FIRST(simple_expr) does not contain reverse.
 {
 	expect(symbol::for_sym);
@@ -458,6 +477,7 @@ void parser::parse_loop_statement()
 
 void parser::parse_range()
 // <range> ::= <simple_expr> .. <simple_expr>
+
 // FIRST(range) = FIRST(simple_expr)    FOLLOW(range) = FOLLOW(expr) + { loop }
 {
 	parse_simple_expr();
@@ -468,6 +488,7 @@ void parser::parse_range()
 void parser::parse_expr()
 // <expr> ::= <simple_expr> [ <relop> <simple_expr> ]
 //          | <simple_expr> in <range>
+
 // both alternatives start with <simple_expr> (common prefix), so it is parsed
 // once (left factoring) and the next token picks the rest:
 //   FIRST(relop) = { =, <>, <, <=, >, >= }    relational comparison
@@ -494,6 +515,7 @@ void parser::parse_expr()
 
 void parser::parse_bool()
 // <bool> ::= true | false
+
 // FIRST(bool) = { true, false }
 {
 	if (scan->have(symbol::true_sym))
@@ -506,7 +528,8 @@ void parser::parse_bool()
 
 void parser::parse_simple_expr()
 // <simple_expr> ::= <expr2> { <stringop> <expr2> }*      <stringop> ::= &
-// the loop repeats while the next token is &.
+
+// the loop repeats while the next token is &
 {
 	parse_expr2();
 	while (scan->have(symbol::ampersand_sym))
@@ -518,6 +541,7 @@ void parser::parse_simple_expr()
 
 void parser::parse_expr2()
 // <expr2> ::= <term> { { <addop> | or } <term> }*       <addop> ::= + | -
+
 // repeat while the next token is +, - or or. a loop (not recursion) avoids
 // left recursion and makes the operators left associative.
 {
@@ -532,7 +556,8 @@ void parser::parse_expr2()
 
 void parser::parse_term()
 // <term> ::= <factor> { { <multop> | and } <factor> }*  <multop> ::= * | /
-// repeat while the next token is *, / or and.
+
+// repeat while the next token is *, / or and
 {
 	parse_factor();
 	while (scan->have(symbol::asterisk_sym) or scan->have(symbol::slash_sym)
@@ -546,6 +571,7 @@ void parser::parse_term()
 void parser::parse_factor()
 // <factor> ::= <primary> [ ** <primary> ]
 //            | [ <addop> ] <primary>
+
 // FIRST(primary) does not contain + or -, so a leading sign selects the second
 // alternative. only the first alternative may be followed by **.
 {
@@ -569,6 +595,7 @@ void parser::parse_primary()
 // <primary> ::= not <expr> | odd <expr> | ( <simple_expr> )
 //             | <ident> [ ( <expr> { , <expr> }* ) ]
 //             | <number> | <string> | <bool>
+
 // every alternative starts with a different token, so one token of lookahead
 // chooses. for <ident>, a following ( means a function call with arguments,
 // otherwise the identifier stands alone (( is not in FOLLOW(primary)).

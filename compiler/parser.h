@@ -17,7 +17,7 @@
 
 using namespace std;
 
-// thrown after the first syntax error is reported (error recovery is phase 4).
+// thrown after the first syntax error is reported (error recovery is phase 4)
 struct syntax_abort {};
 
 class parser {
