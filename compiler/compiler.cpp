@@ -11,6 +11,7 @@
  *
  * Written:            1 June 2020
  * Last modified:      8 November 2026 by Adam Oldham, CSC-4510, creates parser and calls parse()
+ * Last modified:      24 November 2026 by Adam Oldham, CSC-4510, creates the symbol table and passes it to the scanner and parser
  *
  * Open Source - free to distribute and modify. May not be used for profit.
  *
@@ -44,7 +45,7 @@
 #include "symbol.h"
 #include "error_handler.h"
 //#include "code_gen.h"
-//#include "id_table.h"
+#include "id_table.h"
 
 using namespace std;
 using namespace std::chrono;
@@ -202,8 +203,9 @@ bool process_command_line(int argc, char *argv[]) {
 
 			// Phase 2: create the scanner and the parser, then parse the whole program.
 			// Syntax errors are reported through the error handler.
+			id_tab = new id_table(err); // symbol table, shared by the scanner (pragmas) and the parser
 			scan = new scanner(source_filename, id_tab, err);
-			parse = new parser(scan, err);
+			parse = new parser(scan, err, id_tab);
 			parse->parse();
 
 			// Create a symbol_table object

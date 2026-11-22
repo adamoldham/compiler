@@ -6,6 +6,9 @@
  *
  * Phase 2 (parser). Declares the LL(1) recursive-descent parser for lille.
  * One parse function per grammar nonterminal. Syntax only, no semantic checks.
+ *
+ * Phase 3 (semantic analysis), Adam Oldham, CSC-4510. The parser now holds a
+ * pointer to the symbol table so that it can declare and look up identifiers.
  */
 
 #ifndef PARSER_H_
@@ -14,6 +17,7 @@
 #include "scanner.h"
 #include "error_handler.h"
 #include "symbol.h"
+#include "id_table.h"
 
 using namespace std;
 
@@ -24,6 +28,7 @@ class parser {
 private:
 	scanner* scan; // supplies tokens: have(), must_be(), this_token()
 	error_handler* err; // reports errors with line and position
+	id_table* id_tab; // symbol table, one BST per scope level
 
 	// helpers
 	void expect(symbol::symbol_type s); // must_be(s), then abort if it reported an error
@@ -59,7 +64,7 @@ private:
 	void parse_primary();
 
 public:
-	parser(scanner* s, error_handler* e);
+	parser(scanner* s, error_handler* e, id_table* t);
 
 	void parse(); // parse whole program
 };

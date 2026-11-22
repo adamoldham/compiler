@@ -11,6 +11,10 @@
  * lookahead is tested with have() using the FIRST sets, and the FOLLOW sets
  * decide when an optional or empty part is skipped. expect() wraps must_be()
  * and stops at the first syntax error.
+ *
+ * Phase 3 (semantic analysis), Adam Oldham, CSC-4510. Semantic actions are added
+ * to the parse functions: scopes are opened and closed in parse_block and the
+ * program name is declared in parse_prog.
  */
 
 #include "parser.h"
@@ -20,7 +24,7 @@ using namespace std;
 
 //////////////////////////////////////// setup and helpers ////////////////////////////////////////
 
-parser::parser(scanner* s, error_handler* e) : scan(s), err(e)
+parser::parser(scanner* s, error_handler* e, id_table* t) : scan(s), err(e), id_tab(t)
 {
 }
 
@@ -106,6 +110,11 @@ void parser::parse_prog()
 // FIRST(prog) = { program }    FOLLOW(prog) = { end_of_program }
 {
 	expect(symbol::program_sym);
+
+	// read the name before expect() advances past it, then declare it at level 0
+	token* name = scan->this_token();
+	id_tab->insert(name->get_identifier_value(), name->get_line_number(),
+		name->get_pos_on_line(), lille_type(lille_type::type_prog), lille_kind());
 	expect(symbol::identifier);
 	expect(symbol::is_sym);
 	parse_block();
@@ -127,6 +136,8 @@ void parser::parse_block()
 // the name after end is optional and is taken when the token is an identifier,
 // since FOLLOW(block) = { ; } does not contain identifier.
 {
+	id_tab->enter_scope(); // everything declared in this block lives one level deeper
+
 	while (scan->have(symbol::identifier) or scan->have(symbol::procedure_sym)
 		or scan->have(symbol::function_sym))
 		parse_declaration();
@@ -138,6 +149,8 @@ void parser::parse_block()
 	expect(symbol::end_sym);
 	if (scan->have(symbol::identifier))
 		expect(symbol::identifier);
+
+	id_tab->exit_scope(); // prints the active scopes, then discards this block's scope
 }
 
 //////////////////////////////////////// declarations ////////////////////////////////////////
