@@ -1,0 +1,6 @@
+program p is
+  x : integer;
+  x : real;
+begin
+  null;
+end p;

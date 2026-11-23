@@ -1,0 +1,6 @@
+program p is
+  procedure q is begin null; end q;
+  procedure q is begin null; end q;
+begin
+  null;
+end p;

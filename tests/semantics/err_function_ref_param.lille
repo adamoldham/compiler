@@ -1,0 +1,5 @@
+program p is
+  function f(a : ref integer) return integer is begin return a; end f;
+begin
+  null;
+end p;
