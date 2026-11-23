@@ -14,7 +14,9 @@
  *
  * Phase 3 (semantic analysis), Adam Oldham, CSC-4510. Semantic actions are added
  * to the parse functions: scopes are opened and closed in parse_block and the
- * program name is declared in parse_prog.
+ * program name is declared in parse_prog. Declarations (variables, constants,
+ * procedures, functions and parameters) are entered in the symbol table and
+ * checked for duplicates and constant rules in parse_declaration.
  */
 
 #include "parser.h"
@@ -45,6 +47,32 @@ void parser::syntax_error(int error_no)
 {
 	err->flag(scan->this_token(), error_no);
 	throw syntax_abort();
+}
+
+void parser::semantic_error(token* t, int error_no)
+// report a semantic error at token t, then stop parsing. unlike syntax_error the
+// position is the offending identifier or literal, which may be earlier than the
+// current token.
+{
+	err->flag(t, error_no);
+	throw syntax_abort();
+}
+
+void parser::declare_procedure(token& name, lille_type ty, lille_type ret)
+// declare a procedure or function in the enclosing scope using the formals saved in
+// pending_params. this happens before its block is parsed so the body can call itself.
+{
+	id_node* n = id_tab->insert(name.get_identifier_value(), name.get_line_number(),
+		name.get_pos_on_line(), ty, lille_kind());
+	if (n == NULL)
+		semantic_error(&name, 82); // declared twice in the same block
+	for (param_decl& p : pending_params)
+	{
+		if (ty.is_type(lille_type::type_func) and p.kind.is_kind(lille_kind::ref_param))
+			semantic_error(&p.tok, 123); // functions may only have value parameters
+		n->params.push_back({p.tok.get_identifier_value(), p.type, p.kind});
+	}
+	n->return_type = ret; // unknown for a procedure
 }
 
 void parser::parse()
@@ -113,11 +141,12 @@ void parser::parse_prog()
 
 	// read the name before expect() advances past it, then declare it at level 0
 	token* name = scan->this_token();
-	id_tab->insert(name->get_identifier_value(), name->get_line_number(),
+	string prog_name = name->get_identifier_value(); // saved, the scanner overwrites its token
+	id_tab->insert(prog_name, name->get_line_number(),
 		name->get_pos_on_line(), lille_type(lille_type::type_prog), lille_kind());
 	expect(symbol::identifier);
 	expect(symbol::is_sym);
-	parse_block();
+	parse_block(prog_name, 75);
 	expect(symbol::semicolon_sym);
 
 	// FOLLOW(prog) is only end_of_program, so nothing may come after the final ';'
@@ -125,7 +154,7 @@ void parser::parse_prog()
 		syntax_error(77); // no symbols permitted after end of program
 }
 
-void parser::parse_block()
+void parser::parse_block(const string& block_name, int mismatch_error)
 // <block> ::= { <declaration> }* begin <statement_list> end [ <ident> ]
 
 // FIRST(block) = { identifier, procedure, function, begin }    FOLLOW(block) = { ; }
@@ -134,9 +163,21 @@ void parser::parse_block()
 // statements, so a declaration there fails as a statement. if the token is not a
 // declaration start it must be begin (the only other member of FIRST(block)).
 // the name after end is optional and is taken when the token is an identifier,
-// since FOLLOW(block) = { ; } does not contain identifier.
+// since FOLLOW(block) = { ; } does not contain identifier. block_name is the program,
+// procedure or function this block belongs to, the name after end must match it.
 {
 	id_tab->enter_scope(); // everything declared in this block lives one level deeper
+
+	// the formals of a procedure or function were parsed before this scope existed,
+	// so they are declared here, at the start of the procedure or function's own scope
+	for (param_decl& p : pending_params)
+	{
+		id_node* n = id_tab->insert(p.tok.get_identifier_value(), p.tok.get_line_number(),
+			p.tok.get_pos_on_line(), p.type, p.kind);
+		if (n == NULL)
+			semantic_error(&p.tok, 82); // two parameters with the same name
+	}
+	pending_params.clear(); // nested procedures and functions start with their own list
 
 	while (scan->have(symbol::identifier) or scan->have(symbol::procedure_sym)
 		or scan->have(symbol::function_sym))
@@ -148,7 +189,11 @@ void parser::parse_block()
 	parse_statement_list();
 	expect(symbol::end_sym);
 	if (scan->have(symbol::identifier))
+	{
+		if (scan->this_token()->get_identifier_value() != block_name)
+			semantic_error(scan->this_token(), mismatch_error); // end name must match the block
 		expect(symbol::identifier);
+	}
 
 	id_tab->exit_scope(); // prints the active scopes, then discards this block's scope
 }
@@ -167,6 +212,7 @@ void parser::parse_declaration()
 	if (scan->have(symbol::procedure_sym))
 	{
 		expect(symbol::procedure_sym);
+		token name = *scan->this_token(); // copy, the scanner overwrites its token on advance
 		expect(symbol::identifier);
 		if (scan->have(symbol::left_paren_sym)) // optional parameter list, FOLLOW is { is }
 		{
@@ -174,13 +220,15 @@ void parser::parse_declaration()
 			parse_param_list();
 			expect(symbol::right_paren_sym);
 		}
+		declare_procedure(name, lille_type(lille_type::type_proc), lille_type());
 		expect(symbol::is_sym);
-		parse_block();
+		parse_block(name.get_identifier_value(), 107);
 		expect(symbol::semicolon_sym);
 	}
 	else if (scan->have(symbol::function_sym))
 	{
 		expect(symbol::function_sym);
+		token name = *scan->this_token(); // copy, the scanner overwrites its token on advance
 		expect(symbol::identifier);
 		if (scan->have(symbol::left_paren_sym)) // optional parameter list, FOLLOW is { return }
 		{
@@ -189,52 +237,123 @@ void parser::parse_declaration()
 			expect(symbol::right_paren_sym);
 		}
 		expect(symbol::return_sym);
-		parse_type();
+		lille_type ret = parse_type();
+		declare_procedure(name, lille_type(lille_type::type_func), ret);
 		expect(symbol::is_sym);
-		parse_block();
+		parse_block(name.get_identifier_value(), 107);
 		expect(symbol::semicolon_sym);
 	}
 	else if (scan->have(symbol::identifier))
 	{
 		// variable or constant declaration
-		parse_ident_list();
+		vector<token> ids; // names being declared, with their positions
+		parse_ident_list(ids);
 		expect(symbol::colon_sym);
+		bool is_const = false;
 		if (scan->have(symbol::constant_sym))
+		{
 			expect(symbol::constant_sym);
-		parse_type();
-		// optional initial value. whether := is legal (constants only) is a semantic
-		// check for phase 3. the grammar only allows a number, string or bool after it.
+			is_const = true;
+		}
+		lille_type ty = parse_type();
+
+		// optional initial value. the grammar only allows a number, string or bool after
+		// :=, the semantic rules (constants only, type must match) are checked below.
+		bool has_value = false;
+		lille_type lit_ty; // type of the literal
+		token lit_tok; // copy of the literal token, for its value and error position
+		int ival = 0;
+		float rval = 0.0f;
+		string sval;
+		bool bval = false;
 		if (scan->have(symbol::becomes_sym))
 		{
 			expect(symbol::becomes_sym);
+			has_value = true;
+			lit_tok = *scan->this_token();
 			if (scan->have(symbol::integer))
+			{
+				lit_ty = lille_type(lille_type::type_integer);
+				ival = lit_tok.get_integer_value();
 				expect(symbol::integer);
+			}
 			else if (scan->have(symbol::real_num))
+			{
+				lit_ty = lille_type(lille_type::type_real);
+				rval = lit_tok.get_real_value();
 				expect(symbol::real_num);
+			}
 			else if (scan->have(symbol::strng))
+			{
+				lit_ty = lille_type(lille_type::type_string);
+				sval = lit_tok.get_string_value();
 				expect(symbol::strng);
+			}
 			else if (scan->have(symbol::true_sym) or scan->have(symbol::false_sym))
+			{
+				lit_ty = lille_type(lille_type::type_boolean);
+				bval = scan->have(symbol::true_sym);
 				parse_bool();
+			}
 			else
 				syntax_error(112); // literal expected
 		}
 		expect(symbol::semicolon_sym);
+
+		// semantic rules for declarations
+		if (is_const and !has_value)
+			semantic_error(&ids[0], 110); // a constant needs := and a value
+		if (!is_const and has_value)
+			semantic_error(&lit_tok, 91); // lille has no variable initialisation
+		bool int_to_real = false; // an integer literal may initialise a real constant
+		if (is_const)
+		{
+			int_to_real = ty.is_type(lille_type::type_real) and lit_ty.is_type(lille_type::type_integer);
+			if (ty.get_type() != lit_ty.get_type() and !int_to_real)
+				semantic_error(&lit_tok, 111); // literal does not match the declared type
+		}
+
+		// declare each name only after the whole declaration parsed, so a name is not
+		// visible inside its own declaration
+		for (token& id : ids)
+		{
+			id_node* n = id_tab->insert(id.get_identifier_value(), id.get_line_number(),
+				id.get_pos_on_line(), ty,
+				is_const ? lille_kind(lille_kind::constant) : lille_kind(lille_kind::variable));
+			if (n == NULL)
+				semantic_error(&id, 82); // already declared in this block
+			if (is_const)
+			{
+				n->int_val = ival;
+				n->real_val = int_to_real ? float(ival) : rval;
+				n->str_val = sval;
+				n->bool_val = bval;
+			}
+		}
 	}
 	else
 		syntax_error(106); // variable, procedure or function declaration expected
 }
 
-void parser::parse_type()
+lille_type parser::parse_type()
 // <type> ::= integer | real | string | boolean
 
 // FIRST(type) = { integer, real, string, boolean }
 // FOLLOW(type) = { :=, ;, is, ) }
 {
-	if (scan->have(symbol::integer_sym) or scan->have(symbol::real_sym)
-		or scan->have(symbol::string_sym) or scan->have(symbol::boolean_sym))
-		scan->get_token(); // consume the type keyword (already identified by have())
+	lille_type ty;
+	if (scan->have(symbol::integer_sym))
+		ty = lille_type(lille_type::type_integer);
+	else if (scan->have(symbol::real_sym))
+		ty = lille_type(lille_type::type_real);
+	else if (scan->have(symbol::string_sym))
+		ty = lille_type(lille_type::type_string);
+	else if (scan->have(symbol::boolean_sym))
+		ty = lille_type(lille_type::type_boolean);
 	else
 		syntax_error(96); // type name integer, real, string or boolean expected
+	scan->get_token(); // consume the type keyword (already identified by have())
+	return ty;
 }
 
 void parser::parse_param_list()
@@ -254,35 +373,46 @@ void parser::parse_param_list()
 void parser::parse_param()
 // <param> ::= <ident_list> : <param_kind> <type>
 {
-	parse_ident_list();
+	vector<token> ids;
+	parse_ident_list(ids);
 	expect(symbol::colon_sym);
-	parse_param_kind();
-	parse_type();
+	lille_kind kind = parse_param_kind();
+	lille_type ty = parse_type();
+	// the procedure or function's scope does not exist yet, so save the formals for parse_block
+	for (token& id : ids)
+		pending_params.push_back({id, ty, kind});
 }
 
-void parser::parse_ident_list()
+void parser::parse_ident_list(vector<token>& ids)
 // <ident_list> ::= <ident> { , <ident> }*
 
 // FIRST(ident_list) = { identifier }    FOLLOW(ident_list) = { : }
 // a ',' continues the list. ':' (in FOLLOW) ends it.
 {
+	ids.push_back(*scan->this_token()); // copy the token before expect() advances
 	expect(symbol::identifier);
 	while (scan->have(symbol::comma_sym))
 	{
 		expect(symbol::comma_sym);
+		ids.push_back(*scan->this_token());
 		expect(symbol::identifier);
 	}
 }
 
-void parser::parse_param_kind()
+lille_kind parser::parse_param_kind()
 // <param_kind> ::= value | ref
 
 // FIRST(param_kind) = { value, ref }
 {
-	if (scan->have(symbol::value_sym) or scan->have(symbol::ref_sym))
-		scan->get_token(); // consume value or ref (already identified by have())
+	lille_kind kind;
+	if (scan->have(symbol::value_sym))
+		kind = lille_kind(lille_kind::value_param);
+	else if (scan->have(symbol::ref_sym))
+		kind = lille_kind(lille_kind::ref_param);
 	else
 		syntax_error(94); // parameter mode expected
+	scan->get_token(); // consume value or ref (already identified by have())
+	return kind;
 }
 
 //////////////////////////////////////// statements ////////////////////////////////////////
