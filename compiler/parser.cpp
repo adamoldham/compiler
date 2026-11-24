@@ -21,7 +21,9 @@
  * types against the lille type rules. A for loop opens a scope holding its control
  * variable. Assignments, procedure calls, function calls and read, write and writeln
  * are checked against the symbol table (assignable target, compatible types, and
- * argument count, type and mode).
+ * argument count, type and mode). Conditions must be boolean, exit must be inside a
+ * loop, and return is checked against the enclosing function's return type. A function
+ * with no return statement is not reported at compile time (the handout allows delaying it).
  */
 
 #include "parser.h"
@@ -55,7 +57,7 @@ static lille_type arith_result(lille_type a, lille_type b)
 	return lille_type(lille_type::type_real);
 }
 
-parser::parser(scanner* s, error_handler* e, id_table* t) : scan(s), err(e), id_tab(t), primary_count(0), last_ident(NULL)
+parser::parser(scanner* s, error_handler* e, id_table* t) : scan(s), err(e), id_tab(t), primary_count(0), last_ident(NULL), loop_depth(0), current_routine(NULL)
 {
 }
 
@@ -87,7 +89,7 @@ void parser::semantic_error(token* t, int error_no)
 	throw syntax_abort();
 }
 
-void parser::declare_procedure(token& name, lille_type ty, lille_type ret)
+id_node* parser::declare_procedure(token& name, lille_type ty, lille_type ret)
 // declare a procedure or function in the enclosing scope using the formals saved in
 // pending_params. this happens before its block is parsed so the body can call itself.
 {
@@ -102,6 +104,30 @@ void parser::declare_procedure(token& name, lille_type ty, lille_type ret)
 		n->params.push_back({p.tok.get_identifier_value(), p.type, p.kind});
 	}
 	n->return_type = ret; // unknown for a procedure
+	return n;
+}
+
+void parser::parse_routine_block(id_node* routine, token& name)
+// parses the block of a procedure or function. remembers which routine the body belongs
+// to so return can be checked, and restores the outer routine afterwards because routines
+// can be nested.
+{
+	id_node* outer_routine = current_routine;
+	current_routine = routine;
+
+	parse_block(name.get_identifier_value(), 107);
+
+	// whether a function actually executes a return is left until run time, the handout
+	// allows delaying that check, so there is no compile-time check for it here
+	current_routine = outer_routine;
+}
+
+void parser::parse_condition()
+// an expression used as a condition (if, elsif, while, exit when) must be boolean
+{
+	token start = *scan->this_token();
+	if (!parse_expr().is_type(lille_type::type_boolean))
+		semantic_error(&start, 103);
 }
 
 void parser::parse()
@@ -322,9 +348,9 @@ void parser::parse_declaration()
 			parse_param_list();
 			expect(symbol::right_paren_sym);
 		}
-		declare_procedure(name, lille_type(lille_type::type_proc), lille_type());
+		id_node* routine = declare_procedure(name, lille_type(lille_type::type_proc), lille_type());
 		expect(symbol::is_sym);
-		parse_block(name.get_identifier_value(), 107);
+		parse_routine_block(routine, name);
 		expect(symbol::semicolon_sym);
 	}
 	else if (scan->have(symbol::function_sym))
@@ -340,9 +366,9 @@ void parser::parse_declaration()
 		}
 		expect(symbol::return_sym);
 		lille_type ret = parse_type();
-		declare_procedure(name, lille_type(lille_type::type_func), ret);
+		id_node* routine = declare_procedure(name, lille_type(lille_type::type_func), ret);
 		expect(symbol::is_sym);
-		parse_block(name.get_identifier_value(), 107);
+		parse_routine_block(routine, name);
 		expect(symbol::semicolon_sym);
 	}
 	else if (scan->have(symbol::identifier))
@@ -600,18 +626,33 @@ void parser::parse_simple_statement()
 	}
 	else if (scan->have(symbol::exit_sym))
 	{
+		token ex = *scan->this_token();
 		expect(symbol::exit_sym);
+		if (loop_depth == 0)
+			semantic_error(&ex, 89); // exit leaves a loop, so it must be inside one
 		if (scan->have(symbol::when_sym))
 		{
 			expect(symbol::when_sym); // safe: have() matched. must_be() text for 'when' is wrong in the starter code.
-			parse_expr();
+			parse_condition();
 		}
 	}
 	else if (scan->have(symbol::return_sym))
 	{
+		token ret = *scan->this_token();
 		expect(symbol::return_sym);
+		bool in_function = current_routine != NULL
+			and current_routine->type.is_type(lille_type::type_func);
 		if (first_of_expr()) // FIRST(expr) is disjoint from FOLLOW = { ; }
-			parse_expr();
+		{
+			// only a function returns a value, and it must fit the declared return type
+			lille_type t = parse_expr();
+			if (current_routine == NULL)
+				semantic_error(&ret, 88); // the main program cannot return a value
+			if (!in_function or !assign_ok(current_routine->return_type, t))
+				semantic_error(&ret, 87); // a procedure has no value to return, or the type is wrong
+		}
+		else if (in_function)
+			semantic_error(&ret, 87); // a function's return needs a value
 	}
 	else if (scan->have(symbol::read_sym))
 	{
@@ -688,13 +729,13 @@ void parser::parse_if_statement()
 // there is no dangling-else problem because every if is closed by "end if".
 {
 	expect(symbol::if_sym);
-	parse_expr();
+	parse_condition();
 	expect(symbol::then_sym);
 	parse_statement_list();
 	while (scan->have(symbol::elsif_sym))
 	{
 		expect(symbol::elsif_sym);
-		parse_expr();
+		parse_condition();
 		expect(symbol::then_sym);
 		parse_statement_list();
 	}
@@ -711,7 +752,7 @@ void parser::parse_while_statement()
 // <while_statement> ::= while <expr> <loop_statement>
 {
 	expect(symbol::while_sym); // safe: only called after have(while_sym). must_be() text for 'while' is wrong in the starter code.
-	parse_expr();
+	parse_condition();
 	parse_loop_statement();
 }
 
@@ -740,7 +781,9 @@ void parser::parse_loop_statement()
 // <loop_statement> ::= loop <statement_list> end loop
 {
 	expect(symbol::loop_sym);
+	loop_depth++; // exit is legal anywhere inside, including nested loops
 	parse_statement_list();
+	loop_depth--;
 	expect(symbol::end_sym);
 	expect(symbol::loop_sym);
 }

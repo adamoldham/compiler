@@ -11,7 +11,8 @@
  * pointer to the symbol table so that it can declare and look up identifiers.
  * The expression functions now return the type of what they parsed so operand
  * types can be checked. Assignments, calls and their arguments are checked against
- * the declarations in the symbol table.
+ * the declarations in the symbol table. Conditions must be boolean, exit must be in a
+ * loop and return is checked against the enclosing function.
  */
 
 #ifndef PARSER_H_
@@ -50,12 +51,16 @@ private:
 	vector<param_decl> pending_params; // formals parsed but not yet declared (see parse_block)
 	int primary_count; // primaries parsed so far in the current argument
 	id_node* last_ident; // set by parse_primary when it parsed just a plain identifier
+	int loop_depth; // loops currently enclosing the statement being parsed, exit needs > 0
+	id_node* current_routine; // procedure or function whose body is being parsed, NULL in the main program
 
 	// helpers
 	void expect(symbol::symbol_type s); // must_be(s), then abort if it reported an error
 	void syntax_error(int error_no); // flag error at current token, then abort
 	void semantic_error(token* t, int error_no); // flag error at token t, then abort
-	void declare_procedure(token& name, lille_type ty, lille_type ret); // declare procedure or function
+	id_node* declare_procedure(token& name, lille_type ty, lille_type ret); // declare procedure or function
+	void parse_routine_block(id_node* routine, token& name); // body of a procedure or function
+	void parse_condition(); // an expression that must be boolean
 	bool first_of_expr(); // current token in FIRST(expr)?
 	bool first_of_statement(); // current token in FIRST(statement)?
 	vector<arg_info> parse_expr_list(); // parses expr { , expr }*, returns each argument's type
