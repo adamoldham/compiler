@@ -19,7 +19,9 @@
  * checked for duplicates and constant rules in parse_declaration. Each expression
  * function returns the lille_type of the expression it parsed and checks operand
  * types against the lille type rules. A for loop opens a scope holding its control
- * variable.
+ * variable. Assignments, procedure calls, function calls and read, write and writeln
+ * are checked against the symbol table (assignable target, compatible types, and
+ * argument count, type and mode).
  */
 
 #include "parser.h"
@@ -35,6 +37,16 @@ static bool is_arith(lille_type t)
 	return t.is_type(lille_type::type_integer) or t.is_type(lille_type::type_real);
 }
 
+static bool assign_ok(lille_type to, lille_type from)
+// can a value of type from be stored in a location of type to? an integer may be
+// stored in a real (automatic conversion), the reverse needs int2real/real2int.
+// ARITH is the parameter type of the predefined conversion functions.
+{
+	if (to.is_type(lille_type::type_arith) or to.is_type(lille_type::type_real))
+		return is_arith(from);
+	return to.get_type() == from.get_type();
+}
+
 static lille_type arith_result(lille_type a, lille_type b)
 // INT op INT is INT, any REAL operand makes the result REAL
 {
@@ -43,7 +55,7 @@ static lille_type arith_result(lille_type a, lille_type b)
 	return lille_type(lille_type::type_real);
 }
 
-parser::parser(scanner* s, error_handler* e, id_table* t) : scan(s), err(e), id_tab(t)
+parser::parser(scanner* s, error_handler* e, id_table* t) : scan(s), err(e), id_tab(t), primary_count(0), last_ident(NULL)
 {
 }
 
@@ -134,19 +146,90 @@ bool parser::first_of_statement()
 		or scan->have(symbol::while_sym);
 }
 
-vector<lille_type> parser::parse_expr_list()
+vector<arg_info> parser::parse_expr_list()
 // <expr> { , <expr> }*
 
 // helper, not a grammar nonterminal. a comma is the only token that continues the list.
 {
-	vector<lille_type> types;
-	types.push_back(parse_expr());
+	vector<arg_info> args;
+	args.push_back(parse_arg());
 	while (scan->have(symbol::comma_sym))
 	{
 		expect(symbol::comma_sym);
-		types.push_back(parse_expr());
+		args.push_back(parse_arg());
 	}
-	return types;
+	return args;
+}
+
+arg_info parser::parse_arg()
+// parses one expression and also records whether it was just a single identifier. a ref
+// parameter needs that, since only a variable can be passed by reference. the check is:
+// the argument starts with an identifier, contains exactly one primary, and that primary
+// was a plain identifier (not a call or a literal).
+{
+	arg_info a;
+	a.tok = *scan->this_token();
+	bool starts_with_id = scan->have(symbol::identifier);
+	int saved = primary_count; // an argument can contain a call with its own arguments
+	primary_count = 0;
+	last_ident = NULL;
+	a.type = parse_expr();
+	a.ident = (starts_with_id and primary_count == 1) ? last_ident : NULL;
+	primary_count = saved;
+	return a;
+}
+
+void parser::check_arguments(id_node* callee, vector<arg_info>& args, token& name)
+// compare the actual arguments of a call with the formals saved in the callee's node
+{
+	vector<param_info>& formals = callee->params;
+	if (args.size() > formals.size())
+		semantic_error(&args[formals.size()].tok, 100); // first extra argument
+	if (args.size() < formals.size())
+		semantic_error(&name, 97); // too few arguments
+	for (size_t i = 0; i < formals.size(); i++)
+	{
+		param_info& f = formals[i];
+		arg_info& a = args[i];
+		if (f.kind.is_kind(lille_kind::ref_param))
+		{
+			// assigning to a ref formal changes the actual, so the actual must be a
+			// modifiable variable of exactly the same type (no int to real conversion)
+			bool modifiable = a.ident != NULL and (a.ident->kind.is_kind(lille_kind::variable)
+				or a.ident->kind.is_kind(lille_kind::value_param)
+				or a.ident->kind.is_kind(lille_kind::ref_param));
+			if (!modifiable)
+				semantic_error(&a.tok, 99); // a ref parameter needs a variable
+			if (!f.type.is_type(a.type))
+				semantic_error(&a.tok, 98);
+		}
+		else if (!assign_ok(f.type, a.type))
+			semantic_error(&a.tok, 98); // value parameter, the type must be assignable
+	}
+}
+
+void parser::check_output(vector<arg_info> args)
+// write and writeln accept a string, integer or real, not a boolean
+{
+	for (arg_info& a : args)
+		if (a.type.is_type(lille_type::type_boolean))
+			semantic_error(&a.tok, 84);
+}
+
+void parser::parse_read_ident()
+// one identifier of a read statement. it must be declared, be modifiable and be an
+// integer or real (only numbers can be read)
+{
+	token name = *scan->this_token();
+	expect(symbol::identifier);
+	id_node* id = id_tab->lookup(name.get_identifier_value());
+	if (id == NULL)
+		semantic_error(&name, 81);
+	if (!(id->kind.is_kind(lille_kind::variable) or id->kind.is_kind(lille_kind::value_param)
+		or id->kind.is_kind(lille_kind::ref_param)))
+		semantic_error(&name, 85); // constants, loop variables and procedures cannot be read into
+	if (!is_arith(id->type))
+		semantic_error(&name, 86);
 }
 
 //////////////////////////////////////// program and block ////////////////////////////////////////
@@ -481,19 +564,39 @@ void parser::parse_simple_statement()
 {
 	if (scan->have(symbol::identifier))
 	{
+		token name = *scan->this_token(); // copy, the scanner overwrites its token on advance
 		expect(symbol::identifier);
+		id_node* id = id_tab->lookup(name.get_identifier_value());
+		if (id == NULL)
+			semantic_error(&name, 81); // not declared in this or any enclosing scope
+
 		if (scan->have(symbol::becomes_sym))
 		{
+			// assignment, the target must be a variable or parameter
+			if (!(id->kind.is_kind(lille_kind::variable) or id->kind.is_kind(lille_kind::value_param)
+				or id->kind.is_kind(lille_kind::ref_param)))
+				semantic_error(&name, 85); // constants, loop variables, procedures and functions
+			token op = *scan->this_token();
 			expect(symbol::becomes_sym);
-			parse_expr();
+			lille_type rhs = parse_expr();
+			if (!assign_ok(id->type, rhs))
+				semantic_error(&op, 93); // right side does not fit the left side
 		}
-		else if (scan->have(symbol::left_paren_sym))
+		else
 		{
-			expect(symbol::left_paren_sym);
-			parse_expr_list();
-			expect(symbol::right_paren_sym);
+			// procedure call, with or without arguments
+			if (!id->type.is_type(lille_type::type_proc))
+				semantic_error(&name, 90); // only a procedure can be called as a statement
+			vector<arg_info> args;
+			if (scan->have(symbol::left_paren_sym))
+			{
+				expect(symbol::left_paren_sym);
+				args = parse_expr_list();
+				expect(symbol::right_paren_sym);
+			}
+			// else: empty. a call with no arguments. the next token must be ';' (FOLLOW).
+			check_arguments(id, args, name);
 		}
-		// else: empty. a call with no arguments. the next token must be ';' (FOLLOW).
 	}
 	else if (scan->have(symbol::exit_sym))
 	{
@@ -518,11 +621,11 @@ void parser::parse_simple_statement()
 		bool paren = scan->have(symbol::left_paren_sym);
 		if (paren)
 			expect(symbol::left_paren_sym);
-		expect(symbol::identifier);
+		parse_read_ident();
 		while (scan->have(symbol::comma_sym))
 		{
 			expect(symbol::comma_sym);
-			expect(symbol::identifier);
+			parse_read_ident();
 		}
 		if (paren)
 			expect(symbol::right_paren_sym);
@@ -536,7 +639,7 @@ void parser::parse_simple_statement()
 		bool paren = scan->have(symbol::left_paren_sym);
 		if (paren)
 			expect(symbol::left_paren_sym);
-		parse_expr_list();
+		check_output(parse_expr_list());
 		if (paren)
 			expect(symbol::right_paren_sym);
 	}
@@ -547,7 +650,7 @@ void parser::parse_simple_statement()
 		if (paren)
 			expect(symbol::left_paren_sym);
 		if (first_of_expr()) // the expression list is optional, FOLLOW = { ; ) }
-			parse_expr_list();
+			check_output(parse_expr_list());
 		if (paren)
 			expect(symbol::right_paren_sym);
 	}
@@ -828,6 +931,8 @@ lille_type parser::parse_primary()
 // otherwise the identifier stands alone (( is not in FOLLOW(primary)).
 // eof is not part of the grammar, so it is not accepted here.
 {
+	primary_count++; // parse_arg uses these two to tell whether an argument is a bare identifier
+	last_ident = NULL;
 	if (scan->have(symbol::not_sym))
 	{
 		token op = *scan->this_token();
@@ -859,19 +964,25 @@ lille_type parser::parse_primary()
 		if (id == NULL)
 			semantic_error(&name, 81); // not declared in this or any enclosing scope
 
+		vector<arg_info> args;
 		bool has_args = scan->have(symbol::left_paren_sym);
 		if (has_args)
 		{
 			if (!id->type.is_type(lille_type::type_func))
 				semantic_error(&name, 121); // only a function can be followed by arguments
 			expect(symbol::left_paren_sym);
-			parse_expr_list();
+			args = parse_expr_list();
 			expect(symbol::right_paren_sym);
 		}
 		if (id->type.is_type(lille_type::type_func))
+		{
+			check_arguments(id, args, name); // also catches a function with formals called without ()
+			last_ident = NULL; // a call is not a variable
 			return id->return_type; // a call's type is the function's return type
+		}
 		if (id->type.is_type(lille_type::type_proc) or id->type.is_type(lille_type::type_prog))
 			semantic_error(&name, 91); // a procedure or the program name is not a value
+		last_ident = id; // a plain identifier, parse_arg may need it for ref parameters
 		return id->type; // variable, constant or parameter
 	}
 	else if (scan->have(symbol::integer))

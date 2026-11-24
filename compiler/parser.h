@@ -10,7 +10,8 @@
  * Phase 3 (semantic analysis), Adam Oldham, CSC-4510. The parser now holds a
  * pointer to the symbol table so that it can declare and look up identifiers.
  * The expression functions now return the type of what they parsed so operand
- * types can be checked.
+ * types can be checked. Assignments, calls and their arguments are checked against
+ * the declarations in the symbol table.
  */
 
 #ifndef PARSER_H_
@@ -27,6 +28,13 @@ using namespace std;
 // thrown after the first syntax error is reported
 struct syntax_abort {};
 
+// one actual argument of a call
+struct arg_info {
+	lille_type type; // type of the argument expression
+	id_node* ident; // the variable it names if it is just an identifier, otherwise NULL
+	token tok; // first token of the argument, for error positions
+};
+
 // one formal parameter, kept until the procedure or function's own scope exists
 struct param_decl {
 	token tok; // name, line and position
@@ -40,6 +48,8 @@ private:
 	error_handler* err; // reports errors with line and position
 	id_table* id_tab; // symbol table, one BST per scope level
 	vector<param_decl> pending_params; // formals parsed but not yet declared (see parse_block)
+	int primary_count; // primaries parsed so far in the current argument
+	id_node* last_ident; // set by parse_primary when it parsed just a plain identifier
 
 	// helpers
 	void expect(symbol::symbol_type s); // must_be(s), then abort if it reported an error
@@ -48,7 +58,11 @@ private:
 	void declare_procedure(token& name, lille_type ty, lille_type ret); // declare procedure or function
 	bool first_of_expr(); // current token in FIRST(expr)?
 	bool first_of_statement(); // current token in FIRST(statement)?
-	vector<lille_type> parse_expr_list(); // parses expr { , expr }*, returns each expr's type
+	vector<arg_info> parse_expr_list(); // parses expr { , expr }*, returns each argument's type
+	arg_info parse_arg(); // parses one argument and records whether it is a bare identifier
+	void check_arguments(id_node* callee, vector<arg_info>& args, token& name); // actuals vs formals
+	void check_output(vector<arg_info> args); // write and writeln arguments
+	void parse_read_ident(); // one identifier of a read statement
 
 	// one function per nonterminal
 	void parse_prog();

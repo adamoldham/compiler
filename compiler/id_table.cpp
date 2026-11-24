@@ -31,11 +31,12 @@ id_table::id_table(error_handler* err)
     }
     current_level = 0; // level 0 is the outermost (global) scope
 
-    // predefined functions, each takes one value parameter
-    add_builtin("INT2REAL", lille_type::type_integer, lille_type::type_real);
-    add_builtin("REAL2INT", lille_type::type_real, lille_type::type_integer);
-    add_builtin("INT2STRING", lille_type::type_integer, lille_type::type_string);
-    add_builtin("REAL2STRING", lille_type::type_real, lille_type::type_string);
+    // predefined functions, each takes one value parameter. the handout types the
+    // argument as ARITH, so an integer or a real is accepted.
+    add_builtin("INT2REAL", lille_type::type_arith, lille_type::type_real);
+    add_builtin("REAL2INT", lille_type::type_arith, lille_type::type_integer);
+    add_builtin("INT2STRING", lille_type::type_arith, lille_type::type_string);
+    add_builtin("REAL2STRING", lille_type::type_arith, lille_type::type_string);
 }
 
 // destructor runs when table is destroyed and frees any scopes still open
