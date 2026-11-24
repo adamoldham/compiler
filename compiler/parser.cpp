@@ -16,7 +16,10 @@
  * to the parse functions: scopes are opened and closed in parse_block and the
  * program name is declared in parse_prog. Declarations (variables, constants,
  * procedures, functions and parameters) are entered in the symbol table and
- * checked for duplicates and constant rules in parse_declaration.
+ * checked for duplicates and constant rules in parse_declaration. Each expression
+ * function returns the lille_type of the expression it parsed and checks operand
+ * types against the lille type rules. A for loop opens a scope holding its control
+ * variable.
  */
 
 #include "parser.h"
@@ -25,6 +28,20 @@
 using namespace std;
 
 //////////////////////////////////////// setup and helpers ////////////////////////////////////////
+
+static bool is_arith(lille_type t)
+// ARITH is INT | REAL
+{
+	return t.is_type(lille_type::type_integer) or t.is_type(lille_type::type_real);
+}
+
+static lille_type arith_result(lille_type a, lille_type b)
+// INT op INT is INT, any REAL operand makes the result REAL
+{
+	if (a.is_type(lille_type::type_integer) and b.is_type(lille_type::type_integer))
+		return lille_type(lille_type::type_integer);
+	return lille_type(lille_type::type_real);
+}
 
 parser::parser(scanner* s, error_handler* e, id_table* t) : scan(s), err(e), id_tab(t)
 {
@@ -117,17 +134,19 @@ bool parser::first_of_statement()
 		or scan->have(symbol::while_sym);
 }
 
-void parser::parse_expr_list()
+vector<lille_type> parser::parse_expr_list()
 // <expr> { , <expr> }*
 
 // helper, not a grammar nonterminal. a comma is the only token that continues the list.
 {
-	parse_expr();
+	vector<lille_type> types;
+	types.push_back(parse_expr());
 	while (scan->have(symbol::comma_sym))
 	{
 		expect(symbol::comma_sym);
-		parse_expr();
+		types.push_back(parse_expr());
 	}
+	return types;
 }
 
 //////////////////////////////////////// program and block ////////////////////////////////////////
@@ -599,12 +618,19 @@ void parser::parse_for_statement()
 // reverse is optional. FIRST(range) = FIRST(simple_expr) does not contain reverse.
 {
 	expect(symbol::for_sym);
+	token var = *scan->this_token(); // copy, the scanner overwrites its token on advance
 	expect(symbol::identifier);
 	expect(symbol::in_sym);
 	if (scan->have(symbol::reverse_sym))
 		expect(symbol::reverse_sym);
-	parse_range();
+	parse_range(); // parsed before the variable exists, so the bounds cannot use it
+
+	// the control variable is an implicit integer constant visible only inside the loop
+	id_tab->enter_scope();
+	id_tab->insert(var.get_identifier_value(), var.get_line_number(), var.get_pos_on_line(),
+		lille_type(lille_type::type_integer), lille_kind(lille_kind::for_ident));
 	parse_loop_statement();
+	id_tab->exit_scope(); // prints the symbol table, then the loop variable disappears
 }
 
 void parser::parse_loop_statement()
@@ -623,12 +649,15 @@ void parser::parse_range()
 
 // FIRST(range) = FIRST(simple_expr)    FOLLOW(range) = FOLLOW(expr) + { loop }
 {
-	parse_simple_expr();
+	token start = *scan->this_token();
+	lille_type lo = parse_simple_expr();
 	expect(symbol::range_sym);
-	parse_simple_expr();
+	lille_type hi = parse_simple_expr();
+	if (!lo.is_type(lille_type::type_integer) or !hi.is_type(lille_type::type_integer))
+		semantic_error(&start, 104); // both bounds must be integers
 }
 
-void parser::parse_expr()
+lille_type parser::parse_expr()
 // <expr> ::= <simple_expr> [ <relop> <simple_expr> ]
 //          | <simple_expr> in <range>
 
@@ -641,19 +670,31 @@ void parser::parse_expr()
 // "odd <expr>". this is resolved greedily: the innermost expr takes the
 // operator, so "not a = b" means "not (a = b)".
 {
-	parse_simple_expr();
+	lille_type left = parse_simple_expr();
 	if (scan->have(symbol::equals_sym) or scan->have(symbol::not_equals_sym)
 		or scan->have(symbol::less_than_sym) or scan->have(symbol::less_or_equal_sym)
 		or scan->have(symbol::greater_than_sym) or scan->have(symbol::greater_or_equal_sym))
 	{
+		token op = *scan->this_token(); // copy, kept for the error position
 		scan->get_token(); // consume the relop (already identified by have())
-		parse_simple_expr();
+		lille_type right = parse_simple_expr();
+		// ARITH relop ARITH or BOOLEAN relop BOOLEAN, the result is BOOLEAN
+		bool ok = (is_arith(left) and is_arith(right))
+			or (left.is_type(lille_type::type_boolean) and right.is_type(lille_type::type_boolean));
+		if (!ok)
+			semantic_error(&op, 114); // operand types do not match
+		return lille_type(lille_type::type_boolean);
 	}
 	else if (scan->have(symbol::in_sym))
 	{
+		token op = *scan->this_token();
 		expect(symbol::in_sym);
-		parse_range();
+		if (!left.is_type(lille_type::type_integer))
+			semantic_error(&op, 102); // the tested value must be an integer
+		parse_range(); // checks both bounds are integers
+		return lille_type(lille_type::type_boolean);
 	}
+	return left; // no relop or in, the type is just the simple_expr's
 }
 
 void parser::parse_bool()
@@ -669,49 +710,84 @@ void parser::parse_bool()
 		syntax_error(112); // literal expected
 }
 
-void parser::parse_simple_expr()
+lille_type parser::parse_simple_expr()
 // <simple_expr> ::= <expr2> { <stringop> <expr2> }*      <stringop> ::= &
 
 // the loop repeats while the next token is &
 {
-	parse_expr2();
+	lille_type result = parse_expr2();
 	while (scan->have(symbol::ampersand_sym))
 	{
+		token op = *scan->this_token();
 		expect(symbol::ampersand_sym);
-		parse_expr2();
+		lille_type right = parse_expr2();
+		if (!result.is_type(lille_type::type_string) or !right.is_type(lille_type::type_string))
+			semantic_error(&op, 115); // & needs two strings
+		// STRING & STRING is STRING, so result stays STRING
 	}
+	return result;
 }
 
-void parser::parse_expr2()
+lille_type parser::parse_expr2()
 // <expr2> ::= <term> { { <addop> | or } <term> }*       <addop> ::= + | -
 
 // repeat while the next token is +, - or or. a loop (not recursion) avoids
 // left recursion and makes the operators left associative.
 {
-	parse_term();
+	lille_type result = parse_term();
 	while (scan->have(symbol::plus_sym) or scan->have(symbol::minus_sym)
 		or scan->have(symbol::or_sym))
 	{
+		token op = *scan->this_token();
 		scan->get_token(); // consume + - or or (already identified by have())
-		parse_term();
+		lille_type right = parse_term();
+		if (op.get_sym() == symbol::or_sym)
+		{
+			// BOOLEAN or BOOLEAN is BOOLEAN
+			if (!result.is_type(lille_type::type_boolean) or !right.is_type(lille_type::type_boolean))
+				semantic_error(&op, 117);
+		}
+		else
+		{
+			// INT + INT is INT, anything with a REAL is REAL
+			if (!is_arith(result) or !is_arith(right))
+				semantic_error(&op, 116);
+			result = arith_result(result, right);
+		}
 	}
+	return result;
 }
 
-void parser::parse_term()
+lille_type parser::parse_term()
 // <term> ::= <factor> { { <multop> | and } <factor> }*  <multop> ::= * | /
 
 // repeat while the next token is *, / or and
 {
-	parse_factor();
+	lille_type result = parse_factor();
 	while (scan->have(symbol::asterisk_sym) or scan->have(symbol::slash_sym)
 		or scan->have(symbol::and_sym))
 	{
+		token op = *scan->this_token();
 		scan->get_token(); // consume * / or and (already identified by have())
-		parse_factor();
+		lille_type right = parse_factor();
+		if (op.get_sym() == symbol::and_sym)
+		{
+			// BOOLEAN and BOOLEAN is BOOLEAN
+			if (!result.is_type(lille_type::type_boolean) or !right.is_type(lille_type::type_boolean))
+				semantic_error(&op, 120);
+		}
+		else
+		{
+			// same result rules as + and -
+			if (!is_arith(result) or !is_arith(right))
+				semantic_error(&op, 116);
+			result = arith_result(result, right);
+		}
 	}
+	return result;
 }
 
-void parser::parse_factor()
+lille_type parser::parse_factor()
 // <factor> ::= <primary> [ ** <primary> ]
 //            | [ <addop> ] <primary>
 
@@ -720,21 +796,29 @@ void parser::parse_factor()
 {
 	if (scan->have(symbol::plus_sym) or scan->have(symbol::minus_sym))
 	{
+		token op = *scan->this_token();
 		scan->get_token(); // consume the unary sign
-		parse_primary();
+		lille_type t = parse_primary();
+		if (!is_arith(t))
+			semantic_error(&op, 118); // a sign needs an integer or real
+		return t; // the sign does not change the type
 	}
-	else
+	lille_type base = parse_primary();
+	if (scan->have(symbol::power_sym)) // ** is optional
 	{
-		parse_primary();
-		if (scan->have(symbol::power_sym)) // ** is optional
-		{
-			expect(symbol::power_sym);
-			parse_primary();
-		}
+		token op = *scan->this_token();
+		expect(symbol::power_sym);
+		lille_type exponent = parse_primary();
+		if (!is_arith(base))
+			semantic_error(&op, 116);
+		if (!exponent.is_type(lille_type::type_integer))
+			semantic_error(&op, 119); // the exponent must be an integer
+		return base; // INT ** INT is INT, REAL ** INT is REAL
 	}
+	return base;
 }
 
-void parser::parse_primary()
+lille_type parser::parse_primary()
 // <primary> ::= not <expr> | odd <expr> | ( <simple_expr> )
 //             | <ident> [ ( <expr> { , <expr> }* ) ]
 //             | <number> | <string> | <bool>
@@ -746,38 +830,71 @@ void parser::parse_primary()
 {
 	if (scan->have(symbol::not_sym))
 	{
+		token op = *scan->this_token();
 		expect(symbol::not_sym);
-		parse_expr();
+		if (!parse_expr().is_type(lille_type::type_boolean))
+			semantic_error(&op, 120); // not needs a boolean
+		return lille_type(lille_type::type_boolean);
 	}
 	else if (scan->have(symbol::odd_sym))
 	{
+		token op = *scan->this_token();
 		expect(symbol::odd_sym);
-		parse_expr();
+		if (!parse_expr().is_type(lille_type::type_integer))
+			semantic_error(&op, 119); // odd needs an integer
+		return lille_type(lille_type::type_boolean);
 	}
 	else if (scan->have(symbol::left_paren_sym))
 	{
 		expect(symbol::left_paren_sym);
-		parse_simple_expr(); // the grammar allows a simple_expr here, not a full expr
+		lille_type t = parse_simple_expr(); // the grammar allows a simple_expr here, not a full expr
 		expect(symbol::right_paren_sym);
+		return t;
 	}
 	else if (scan->have(symbol::identifier))
 	{
+		token name = *scan->this_token(); // copy, the scanner overwrites its token on advance
 		expect(symbol::identifier);
-		if (scan->have(symbol::left_paren_sym))
+		id_node* id = id_tab->lookup(name.get_identifier_value());
+		if (id == NULL)
+			semantic_error(&name, 81); // not declared in this or any enclosing scope
+
+		bool has_args = scan->have(symbol::left_paren_sym);
+		if (has_args)
 		{
+			if (!id->type.is_type(lille_type::type_func))
+				semantic_error(&name, 121); // only a function can be followed by arguments
 			expect(symbol::left_paren_sym);
 			parse_expr_list();
 			expect(symbol::right_paren_sym);
 		}
+		if (id->type.is_type(lille_type::type_func))
+			return id->return_type; // a call's type is the function's return type
+		if (id->type.is_type(lille_type::type_proc) or id->type.is_type(lille_type::type_prog))
+			semantic_error(&name, 91); // a procedure or the program name is not a value
+		return id->type; // variable, constant or parameter
 	}
 	else if (scan->have(symbol::integer))
+	{
 		expect(symbol::integer);
+		return lille_type(lille_type::type_integer);
+	}
 	else if (scan->have(symbol::real_num))
+	{
 		expect(symbol::real_num);
+		return lille_type(lille_type::type_real);
+	}
 	else if (scan->have(symbol::strng))
+	{
 		expect(symbol::strng);
+		return lille_type(lille_type::type_string);
+	}
 	else if (scan->have(symbol::true_sym) or scan->have(symbol::false_sym))
+	{
 		parse_bool();
+		return lille_type(lille_type::type_boolean);
+	}
 	else
 		syntax_error(92); // string or expression expected
+	return lille_type(); // not reached, syntax_error throws
 }

@@ -9,6 +9,8 @@
  *
  * Phase 3 (semantic analysis), Adam Oldham, CSC-4510. The parser now holds a
  * pointer to the symbol table so that it can declare and look up identifiers.
+ * The expression functions now return the type of what they parsed so operand
+ * types can be checked.
  */
 
 #ifndef PARSER_H_
@@ -46,7 +48,7 @@ private:
 	void declare_procedure(token& name, lille_type ty, lille_type ret); // declare procedure or function
 	bool first_of_expr(); // current token in FIRST(expr)?
 	bool first_of_statement(); // current token in FIRST(statement)?
-	void parse_expr_list(); // parses expr { , expr }*
+	vector<lille_type> parse_expr_list(); // parses expr { , expr }*, returns each expr's type
 
 	// one function per nonterminal
 	void parse_prog();
@@ -66,13 +68,13 @@ private:
 	void parse_for_statement();
 	void parse_loop_statement();
 	void parse_range();
-	void parse_expr();
+	lille_type parse_expr();
 	void parse_bool();
-	void parse_simple_expr();
-	void parse_expr2();
-	void parse_term();
-	void parse_factor();
-	void parse_primary();
+	lille_type parse_simple_expr();
+	lille_type parse_expr2();
+	lille_type parse_term();
+	lille_type parse_factor();
+	lille_type parse_primary();
 
 public:
 	parser(scanner* s, error_handler* e, id_table* t);
