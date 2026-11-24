@@ -53,6 +53,7 @@ private:
 	id_node* last_ident; // set by parse_primary when it parsed just a plain identifier
 	int loop_depth; // loops currently enclosing the statement being parsed, exit needs > 0
 	id_node* current_routine; // procedure or function whose body is being parsed, NULL in the main program
+	bool saw_return; // has the current routine's body contained a return statement yet
 
 	// helpers
 	void expect(symbol::symbol_type s); // must_be(s), then abort if it reported an error

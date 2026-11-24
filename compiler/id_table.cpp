@@ -6,9 +6,11 @@
  *      Author: Michael Oudshoorn
  *
  * Modified by: Adam Oldham, CSC-4510
- * Phase 3 (semantic analysis). The symbol table is an array of BSTs
- * table[i] holds the identifiers declared at scope level i. Level 0 holds the
- * program name and the predefined conversion functions.
+ * Phase 3 (semantic analysis)
+ * The symbol table is an array of BSTs table[i] holds the 
+ * identifiers declared at scope level i.
+ * Level 0 holds the program name and the predefined conversion functions.
+ * The pragma trace, untrace and debug settings are kept here too.
  */
 
 #include <iostream>
@@ -30,9 +32,9 @@ id_table::id_table(error_handler* err)
         next_offset[i] = 0;
     }
     current_level = 0; // level 0 is the outermost (global) scope
+    debug_on = false;
 
-    // predefined functions, each takes one value parameter. the handout types the
-    // argument as ARITH, so an integer or a real is accepted.
+    // predefined functions, each takes one value parameter
     add_builtin("INT2REAL", lille_type::type_arith, lille_type::type_real);
     add_builtin("REAL2INT", lille_type::type_arith, lille_type::type_integer);
     add_builtin("INT2STRING", lille_type::type_arith, lille_type::type_string);
@@ -106,6 +108,28 @@ id_node* id_table::insert(string name, int line, int pos, lille_type ty, lille_k
 }
 
 
+int id_table::set_trace(string name, bool on)
+// pragma trace (on) and untrace (off). the name must be declared and in scope (81) and
+// must be a variable or parameter, the only things whose value can change (72).
+{
+    id_node* n = lookup(name);
+    if (n == NULL)
+        return 81;
+    if (!(n->kind.is_kind(lille_kind::variable) or n->kind.is_kind(lille_kind::value_param)
+        or n->kind.is_kind(lille_kind::ref_param)))
+        return 72;
+    n->trace = on;
+    return 0;
+}
+
+
+void id_table::set_debug(bool on)
+// pragma debug. variables traced individually by pragma trace stay traced after debug(off)
+{
+    debug_on = on;
+}
+
+
 id_node* id_table::lookup(string name)
 {
     // innermost scope first, so an inner declaration hides an outer one
@@ -172,7 +196,8 @@ void id_table::print_node(id_node* n)
          << "  Kind: " << n->kind.to_string()
          << "  Level: " << n->level
          << "  Offset: " << n->offset
-         << "  Trace?: " << n->trace;
+         << "  Trace?: " << (n->trace or (debug_on and (n->kind.is_kind(lille_kind::variable)
+                 or n->kind.is_kind(lille_kind::value_param) or n->kind.is_kind(lille_kind::ref_param))));
     if (n->type.is_type(lille_type::type_proc) || n->type.is_type(lille_type::type_func))
     {
         cout << "  #params: " << n->params.size();

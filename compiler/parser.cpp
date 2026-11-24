@@ -12,18 +12,20 @@
  * decide when an optional or empty part is skipped. expect() wraps must_be()
  * and stops at the first syntax error.
  *
- * Phase 3 (semantic analysis), Adam Oldham, CSC-4510. Semantic actions are added
- * to the parse functions: scopes are opened and closed in parse_block and the
+ * Phase 3 (semantic analysis)
+ * Semantic actions are added to the parse functions: 
+ * scopes are opened and closed in parse_block and the
  * program name is declared in parse_prog. Declarations (variables, constants,
  * procedures, functions and parameters) are entered in the symbol table and
- * checked for duplicates and constant rules in parse_declaration. Each expression
- * function returns the lille_type of the expression it parsed and checks operand
- * types against the lille type rules. A for loop opens a scope holding its control
- * variable. Assignments, procedure calls, function calls and read, write and writeln
+ * checked for duplicates and constant rules in parse_declaration
+ * Each expression function returns the lille_type of the expression it parsed and checks operand
+ * types against the lille type rules. A for loop opens a scope holding its control variable
+ * Assignments, procedure calls, function calls and read, write and writeln
  * are checked against the symbol table (assignable target, compatible types, and
- * argument count, type and mode). Conditions must be boolean, exit must be inside a
- * loop, and return is checked against the enclosing function's return type. A function
- * with no return statement is not reported at compile time (the handout allows delaying it).
+ * argument count, type and mode).
+ * Conditions must be boolean, exit must be inside a loop 
+ * and return is checked against the enclosing function's return type
+ * A function whose body has no return statement is reported at compile time
  */
 
 #include "parser.h"
@@ -57,7 +59,7 @@ static lille_type arith_result(lille_type a, lille_type b)
 	return lille_type(lille_type::type_real);
 }
 
-parser::parser(scanner* s, error_handler* e, id_table* t) : scan(s), err(e), id_tab(t), primary_count(0), last_ident(NULL), loop_depth(0), current_routine(NULL)
+parser::parser(scanner* s, error_handler* e, id_table* t) : scan(s), err(e), id_tab(t), primary_count(0), last_ident(NULL), loop_depth(0), current_routine(NULL), saw_return(false)
 {
 }
 
@@ -113,13 +115,17 @@ void parser::parse_routine_block(id_node* routine, token& name)
 // can be nested.
 {
 	id_node* outer_routine = current_routine;
+	bool outer_saw_return = saw_return;
 	current_routine = routine;
+	saw_return = false; // a nested routine's return does not count for this one
 
 	parse_block(name.get_identifier_value(), 107);
 
-	// whether a function actually executes a return is left until run time, the handout
-	// allows delaying that check, so there is no compile-time check for it here
+	// the body of a function must contain at least one return (static semantics rule e)
+	if (routine->type.is_type(lille_type::type_func) and !saw_return)
+		semantic_error(&name, 109);
 	current_routine = outer_routine;
+	saw_return = outer_saw_return;
 }
 
 void parser::parse_condition()
@@ -426,8 +432,6 @@ void parser::parse_declaration()
 			else
 				syntax_error(112); // literal expected
 		}
-		expect(symbol::semicolon_sym);
-
 		// semantic rules for declarations
 		if (is_const and !has_value)
 			semantic_error(&ids[0], 110); // a constant needs := and a value
@@ -458,6 +462,11 @@ void parser::parse_declaration()
 				n->bool_val = bval;
 			}
 		}
+
+		// the ; is consumed last on purpose. the scanner reads one token ahead and handles
+		// a pragma as soon as it reaches it, so the names must already be declared by the
+		// time the scanner moves past the ;
+		expect(symbol::semicolon_sym);
 	}
 	else
 		syntax_error(106); // variable, procedure or function declaration expected
@@ -640,6 +649,7 @@ void parser::parse_simple_statement()
 	{
 		token ret = *scan->this_token();
 		expect(symbol::return_sym);
+		saw_return = true;
 		bool in_function = current_routine != NULL
 			and current_routine->type.is_type(lille_type::type_func);
 		if (first_of_expr()) // FIRST(expr) is disjoint from FOLLOW = { ; }

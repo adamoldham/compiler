@@ -6,8 +6,9 @@
  *      Author: Michael Oudshoorn
  *
  * Modified by: Adam Oldham, CSC-4510
- * Phase 3 (semantic analysis). Symbol table implemented as an array of
- * binary search trees, one BST per scope level.
+ * Phase 3 (semantic analysis)
+ * Symbol table implemented as an array of binary search trees, one BST per scope level.
+ * Also holds the pragma trace and debug settings.
  */
 
 #ifndef ID_TABLE_H_
@@ -64,6 +65,7 @@ private:
 	id_node* table[MAX_LEVELS]; // table[i] is the root of the BST for scope level i
 	int next_offset[MAX_LEVELS]; // next free offset in each scope
 	int current_level; // innermost active scope
+	bool debug_on; // pragma debug(on) traces every variable
 
 	id_node* bst_insert(id_node*& root, id_node* n); // false result is a duplicate
 	id_node* bst_find(id_node* root, const string& name);
@@ -85,6 +87,9 @@ public:
 	id_node* insert(string name, int line, int pos, lille_type ty, lille_kind kind);
 	id_node* lookup(string name); // current scope outward to level 0, NULL if not found
 	id_node* lookup_current(string name); // current scope only, NULL if not found
+
+	int set_trace(string name, bool on); // pragma trace/untrace, 0 if ok, else the error number
+	void set_debug(bool on); // pragma debug(on) or debug(off)
 
 	void dump_id_table(bool dump_all = true);
 };

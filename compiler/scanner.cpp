@@ -4,6 +4,10 @@
  * Written:            1 June 2020
  * Last modified:      1 June 2023
  *      Author: Michael Oudshoorn
+ *
+ * Modified by: Adam Oldham, CSC-4510
+ * Phase 3 (semantic analysis). parse_pragma now carries out the pragmas: error_limit,
+ * trace, untrace and debug.
  */
 
 
@@ -745,9 +749,6 @@ void scanner::parse_pragma()
 // parse the pragma identified by the scanner.
 
     
-    // NOTE. YOU WILL NEED TO RETURN TO THIS CODE ONCE THE PARSER AND SYMBOL TABLE
-    // ARE WRITTEN IN ORDER TO IMPLEMENT THE FUNCTIONALITY OF PRAGMAS.
-    
 	string pragma_name = "";
 
 	get_token();	// consume the pragma keyword
@@ -774,7 +775,7 @@ void scanner::parse_pragma()
 	{
 		if (current_symbol->get_sym() == symbol::integer)
         {
-			// INSERT CODE HERE
+			error->set_error_limit(current_integer_value); // stop reporting after this many errors
         }
 		else
 			error->flag(current_line_number, current_pos_on_line, 71);	// pragma ERROR_LIMIT requires a numeric argument.
@@ -783,9 +784,15 @@ void scanner::parse_pragma()
 	{
 		if (current_symbol->get_sym() == symbol::identifier)
 			// Turn on tracing flag in the symbol table for this identifier.
-			// Do not generate an error if the identifier is not present!
+			// the handout requires the variable to be declared and in scope, so a name that
+			// is not found is an error (81) even though the starter comment said otherwise.
 		{
-            // INSERT CODE HERE
+			if (id_tab != NULL)
+			{
+				int problem = id_tab->set_trace(current_identifier_name, true);
+				if (problem != 0)
+					error->flag(current_line_number, current_pos_on_line, problem);
+			}
 		}
 		else
 			error->flag(current_line_number, current_pos_on_line, 72);	// pragma TRACE requires a variable name.
@@ -794,9 +801,14 @@ void scanner::parse_pragma()
 	{
 		if (current_symbol->get_sym() == symbol::identifier)
             // Turn off tracing flag in the symbol table for this identifier.
-            // Do not generate an error if the identifier is not present!
+            // same rule as trace, the variable must be declared and in scope.
         {
-            // INSERT CODE HERE
+			if (id_tab != NULL)
+			{
+				int problem = id_tab->set_trace(current_identifier_name, false);
+				if (problem != 0)
+					error->flag(current_line_number, current_pos_on_line, problem);
+			}
         }
 		else
 			error->flag(current_line_number, current_pos_on_line, 72);	// pragma UNTRACE requires a variable name.
@@ -805,11 +817,17 @@ void scanner::parse_pragma()
 	{
 		if (current_symbol->get_sym() == symbol::identifier)
 		{
-			// INSERT CODE HERE
             // pragma DEBUG requires either ON or OFF as the argument.
+			if (current_identifier_name == "ON" or current_identifier_name == "OFF")
+			{
+				if (id_tab != NULL)
+					id_tab->set_debug(current_identifier_name == "ON");
+			}
+			else
+				error->flag(current_line_number, current_pos_on_line, 73);	// ON or OFF expected.
 		}
 		else
-			error->flag(current_line_number, current_pos_on_line, 72);	// pragma TRACE requires a variable name.
+			error->flag(current_line_number, current_pos_on_line, 73);	// ON or OFF expected.
 	}
 	else
 	{
