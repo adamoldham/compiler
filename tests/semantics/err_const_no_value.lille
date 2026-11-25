@@ -1,5 +1,0 @@
-program p is
-  c : constant integer;
-begin
-  null;
-end p;

@@ -1,5 +1,0 @@
-program p is
-  x : integer := 5;
-begin
-  null;
-end p;

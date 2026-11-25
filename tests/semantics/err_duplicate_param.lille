@@ -1,5 +1,0 @@
-program p is
-  procedure q(a : value integer; a : value real) is begin null; end q;
-begin
-  null;
-end p;

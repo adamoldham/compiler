@@ -1,5 +1,0 @@
-program p is
-  procedure q is begin null; end r;
-begin
-  null;
-end p;

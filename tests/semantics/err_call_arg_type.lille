@@ -1,0 +1,5 @@
+program p is
+  procedure q(a : value integer) is begin null; end q;
+begin
+  q("hi");
+end p;

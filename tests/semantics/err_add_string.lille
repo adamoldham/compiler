@@ -1,0 +1,6 @@
+program p is
+  x : integer;
+  s : string;
+begin
+  x := 1 + "a";
+end p;

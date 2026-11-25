@@ -1,0 +1,29 @@
+program p is
+  i, total : integer;
+  b : boolean;
+  procedure p1 is
+  begin
+    return;
+  end p1;
+  function twice(n : value integer) return real is
+    function inner return integer is begin return 1; end inner;
+  begin
+    if n > 0 then return n * 2; else return inner; end if;
+  end twice;
+begin
+  b := true;
+  i := 0;
+  while i < 5 loop
+    i := i + 1;
+    exit when i = 3;
+  end loop;
+  loop
+    if b then exit; elsif i in 1 .. 2 then null; end if;
+    i := i + 1;
+  end loop;
+  for k in 1 .. 3 loop
+    for j in reverse 1 .. k loop total := total + j; exit when odd j; end loop;
+  end loop;
+  p1;
+  return;
+end p;
