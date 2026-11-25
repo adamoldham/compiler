@@ -1,0 +1,21 @@
+program p is
+  i, j : integer;
+  r : real;
+  s : string;
+  b : boolean;
+  function sq(n : value integer) return integer is begin return n * n; end sq;
+begin
+  i := 2 + 3 * 4 - 1 / 2;
+  r := i + 1.5;
+  r := -r;
+  r := r ** 2;
+  s := "a" & "b" & int2string(i);
+  b := i < j;
+  b := not r >= 2.5;
+  b := i in 1 .. 10;
+  b := odd i;
+  b := b and true;
+  b := b or false;
+  i := sq(i) + i ** 2;
+  for k in reverse 1 .. i loop j := k; end loop;
+end p;

@@ -1,0 +1,5 @@
+program p is
+  x : integer;
+begin
+  x := y + 1;
+end p;

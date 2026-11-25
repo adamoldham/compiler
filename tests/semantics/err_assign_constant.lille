@@ -1,0 +1,5 @@
+program p is
+  c : constant integer := 1;
+begin
+  c := 2;
+end p;

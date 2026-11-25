@@ -1,0 +1,5 @@
+program p is
+  c : constant integer := 2.5;
+begin
+  null;
+end p;

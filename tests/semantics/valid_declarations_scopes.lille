@@ -1,0 +1,18 @@
+program p is
+  x, y : integer;
+  r : constant real := 3;
+  s : constant string := "hi";
+  b : constant boolean := true;
+  procedure q(a : value integer; t : ref real) is
+    x : real;
+  begin
+    null;
+  end q;
+  function f(n : value integer) return integer is
+    z : integer;
+  begin
+    return n;
+  end f;
+begin
+  null;
+end p;

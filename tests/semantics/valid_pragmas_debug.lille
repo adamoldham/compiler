@@ -1,0 +1,9 @@
+program p is
+  x, y : integer;
+  pragma trace(x);
+begin
+  pragma debug(on);
+  x := 1;
+  pragma untrace(x);
+  y := 2;
+end p;

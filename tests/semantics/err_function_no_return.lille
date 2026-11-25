@@ -1,0 +1,5 @@
+program p is
+  function f return integer is begin null; end f;
+begin
+  null;
+end p;
